@@ -120,7 +120,7 @@ body {
 .btn:hover { border-color: var(--muted); }
 
 main {
-  max-width: 1100px;
+  width: 100%;
   margin: 0 auto;
   padding: 1.5rem;
   display: flex;
@@ -130,7 +130,7 @@ main {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -152,7 +152,7 @@ main {
 
 .card .temp {
   margin: 0.35rem 0 0.15rem;
-  font-size: 2.4rem;
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -345,3 +345,13 @@ table.stats td { white-space: nowrap; }
 .status-details { display: grid; grid-template-columns: auto 1fr; gap: 0.75rem 1.5rem; }
 .status-details dt { color: var(--muted); }
 .status-details dd { margin: 0; overflow-wrap: anywhere; }
+
+.combined-chart { height: 440px; }
+@media (max-width: 640px) { .combined-chart { height: 360px; } }
+
+.thermal-zone, .thermal-state { margin-top: 0.35rem; font-size: 0.8rem; color: var(--muted); }
+.thermal-guides { color: var(--muted); font-size: 0.85rem; }
+.thermal-guides summary { cursor: pointer; }
+.thermal-guides a { color: var(--amber); }
+#zone-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+#zone-form input { width: 5rem; padding: 0.4rem; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 5px; }

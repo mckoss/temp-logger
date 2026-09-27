@@ -35,11 +35,11 @@ test('workload summaries are stored with thermal readings as percentages', async
     expect(latest.some(other => other.sensor === 'cpu' && other.ts === row.ts)).toBe(true);
   }
   await page.goto('/');
-  await expect(page.locator('#hist-load')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => Chart.getChart('hist-load')?.data.datasets.length)).toBe(4);
-  const before = await page.evaluate(() => Chart.getChart('hist-load').data.datasets.map(dataset => dataset.data));
+  await expect(page.locator('#history-chart')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(8);
+  const before = await page.evaluate(() => Chart.getChart('history-chart').data.datasets.filter(dataset => dataset.unit === '%').map(dataset => dataset.data));
   await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
-  const after = await page.evaluate(() => ({ values: Chart.getChart('hist-load').data.datasets.map(dataset => dataset.data), min: Chart.getChart('hist-load').options.scales.y.min, max: Chart.getChart('hist-load').options.scales.y.max }));
+  const after = await page.evaluate(() => ({ values: Chart.getChart('history-chart').data.datasets.filter(dataset => dataset.unit === '%').map(dataset => dataset.data), min: Chart.getChart('history-chart').options.scales.load.min, max: Chart.getChart('history-chart').options.scales.load.max }));
   expect(after.values).toEqual(before);
   expect(after.min).toBe(0); expect(after.max).toBe(100);
 });

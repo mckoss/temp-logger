@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 async function fixedReadings(page) {
   const ts = Date.now();
   const readings = { cpu: 20, gpu: 30, fan1: 2000, fan2: 2100 };
+  await page.route('**/api/thermal', route => route.fulfill({ json: { latest: { ts, readings }, state: { label: 'Nominal', level: 0 } } }));
   await page.route('**/api/current', route => route.fulfill({ json: {
     latest: Object.entries(readings).map(([sensor, value_c]) => ({ sensor, value_c, ts })),
   } }));
@@ -20,17 +21,17 @@ async function fixedReadings(page) {
 
 async function chartState(page) {
   return page.evaluate(() => {
-    const history = Chart.getChart('hist-temp');
-    const trend = Chart.getChart('trend-temp');
-    const fan = Chart.getChart('hist-fan');
+    const history = Chart.getChart('history-chart');
+    const trend = Chart.getChart('trend-chart');
+    const fan = Chart.getChart('history-chart');
     return {
-      history: history.data.datasets[0].data,
-      trend: trend.data.datasets.slice(0, 3).map(dataset => dataset.data[0]),
-      axis: history.options.scales.y.title.text,
-      trendAxis: trend.options.scales.y.title.text,
-      tooltip: history.options.plugins.tooltip.callbacks.label({ dataset: { label: 'CPU' }, parsed: { y: history.data.datasets[0].data[0] } }),
-      fan: fan.data.datasets[0].data,
-      fanAxis: fan.options.scales.y.title.text,
+      history: history.data.datasets[0].data.map(point => point.y),
+      trend: trend.data.datasets.slice(0, 3).map(dataset => dataset.data[0].y),
+      axis: history.options.scales.temperature.title.text,
+      trendAxis: trend.options.scales.temperature.title.text,
+      tooltip: history.options.plugins.tooltip.callbacks.label({ dataset: { label: 'CPU', unit: '°C' }, parsed: { y: history.data.datasets[0].data[0].y } }),
+      fan: fan.data.datasets.find(dataset => dataset.sensor === 'fan1').data.map(point => point.y),
+      fanAxis: fan.options.scales.fans.title.text,
       hidden: !trend.isDatasetVisible(2),
     };
   });
@@ -39,16 +40,16 @@ async function chartState(page) {
 test('unit toggle converts every temperature display, preserves RPM, and persists', async ({ page }) => {
   await fixedReadings(page);
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-temp')?.data.datasets.length)).toBe(6);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
   await expect(page.getByRole('button', { name: 'Celsius', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
-  await page.locator('#chips-trend-temp').getByRole('button', { name: 'CPU', exact: true }).click();
+  await page.locator('#chips-trend').getByRole('button', { name: 'CPU', exact: true }).click();
   await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Fahrenheit', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
   await expect(page.locator('#stats-table tbody tr').first().locator('td')).toHaveText(['CPU', '68.0 °F', '50.0 °F', '86.0 °F', '68.0 °F', '3']);
-  expect(await chartState(page)).toEqual({ history: [68], trend: [86, 50, 68], axis: '°F', trendAxis: '°F', tooltip: ' CPU: 68.0 °F', fan: [2000], fanAxis: 'RPM', hidden: true });
-  await expect(page.locator('#cards .card').nth(2)).toContainText('2,000 RPM');
+  expect(await chartState(page)).toEqual({ history: [68], trend: [86, 50, 68], axis: 'Temperature (°F) · guide zones', trendAxis: 'Temperature (°F) · guide zones', tooltip: ' CPU: 68.0 °F', fan: [2000], fanAxis: 'Fans (RPM)', hidden: true });
+  await expect(page.locator('#stats-table tbody tr').nth(2)).toContainText('2,000 RPM');
 
   // Subsequent API refreshes still arrive in Celsius and display correctly.
   const historyResponse = page.waitForResponse(response => response.url().includes('/api/history?'));
@@ -57,7 +58,7 @@ test('unit toggle converts every temperature display, preserves RPM, and persist
   await expect.poll(async () => (await chartState(page)).history).toEqual([68]);
   await page.reload();
   await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-temp')?.data.datasets.length)).toBe(6);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
   await page.getByRole('button', { name: 'Celsius', exact: true }).click();
   await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
   expect((await chartState(page)).trend).toEqual([30, 10, 20]);

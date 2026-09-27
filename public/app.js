@@ -1,7 +1,7 @@
-// Dashboard: live sensor cards, per-unit history charts, long-term
+// Dashboard: live sensor cards, combined history charts, long-term
 // min/max/avg trend bands, and range statistics.
 
-const PALETTE = ['#ffb020', '#ff5d5d', '#4dd0e1', '#9ccc65', '#ba68c8', '#4db6ac'];
+const PALETTE = ['#ffb020', '#ff5d5d', '#4dd0e1', '#9ccc65', '#ba68c8', '#f48fb1', '#4db6ac', '#90a4ff'];
 const SENSOR_ORDER = ['cpu', 'gpu', 'fan1', 'fan2', 'fan3', 'fan4', 'cpu_load', 'cpu_peak', 'gpu_load', 'gpu_peak'];
 const RANGES = [
   { label: '1H', ms: 3600e3 },
@@ -27,6 +27,12 @@ const UNIT_STORAGE_KEY = 'temp-logger.temperature-unit';
 let temperatureUnit = '°C';
 let currentReadings = [];
 let rangeStats = null;
+let thermalStatus = null;
+let zoneBounds = [60, 80, 95];
+try {
+  const saved = JSON.parse(localStorage.getItem('temp-logger.zone-bounds'));
+  if (Array.isArray(saved) && saved.length === 3 && saved.every((value, i) => Number.isFinite(value) && value > 0 && value < 200 && (!i || value > saved[i - 1]))) zoneBounds = saved;
+} catch { /* Keep the display-guide defaults. */ }
 try {
   if (localStorage.getItem(UNIT_STORAGE_KEY) === '°F') temperatureUnit = '°F';
 } catch { /* Display preferences still work when storage is unavailable. */ }
@@ -54,6 +60,7 @@ $('temperature-units').addEventListener('click', event => {
   temperatureUnit = button.dataset.unit;
   try { localStorage.setItem(UNIT_STORAGE_KEY, temperatureUnit); } catch { /* Optional persistence. */ }
   updateUnitButtons();
+  updateZoneInputs();
   renderCards(currentReadings);
   if (rangeStats) renderStats(rangeStats.stats, rangeStats.latest);
   for (const entry of Object.values(charts)) {
@@ -63,9 +70,8 @@ $('temperature-units').addEventListener('click', event => {
 updateUnitButtons();
 
 // Keep original API values so switching units never compounds rounding errors.
-function setChartDatasets(entry, datasets, unit) {
+function setChartDatasets(entry, datasets) {
   entry.sourceDatasets = datasets;
-  entry.unit = unit;
   renderChartUnits(entry);
 }
 
@@ -74,12 +80,14 @@ function renderChartUnits(entry) {
     [dataset.label, entry.chart.isDatasetVisible(index)]));
   entry.chart.data.datasets = entry.sourceDatasets.map(dataset => ({
     ...dataset,
-    data: dataset.data.map(value => displayValue(value, entry.unit)),
+    data: dataset.data.map(point => ({ ...point, y: displayValue(point.y, dataset.unit) })),
   }));
   entry.chart.data.datasets.forEach((dataset, index) => {
     entry.chart.setDatasetVisibility(index, visibility.get(dataset.label) ?? true);
   });
-  entry.chart.options.scales.y.title.text = displayUnit(entry.unit);
+  entry.chart.options.scales.temperature.title.text = `Temperature (${temperatureUnit}) · guide zones`;
+  entry.chart.options.scales.temperature.suggestedMin = displayValue(20, '°C');
+  entry.chart.options.scales.temperature.suggestedMax = displayValue(Math.max(100, zoneBounds[2] + 5), '°C');
   entry.chart.update();
 }
 
@@ -141,241 +149,215 @@ function fmtInterval(ms) {
   return `${Math.round(ms / 1000)}s`;
 }
 
-// Sensors grouped by unit so each chart has a single honest y-axis.
-function groups() {
-  const temp = [], fans = [], load = [];
-  for (const s of sensorList) {
-    (sensorUnit(s) === '%' ? load : sensorUnit(s) === 'RPM' ? fans : temp).push(s);
+function updateZoneInputs() {
+  zoneBounds.forEach((value, index) => { $(`zone-${index + 1}`).value = Number(displayValue(value, '°C').toFixed(1)); });
+  $('zone-unit').textContent = temperatureUnit;
+}
+updateZoneInputs();
+$('zone-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const values = [1, 2, 3].map(index => {
+    const number = Number($(`zone-${index}`).value);
+    return temperatureUnit === '°F' ? (number - 32) * 5 / 9 : number;
+  });
+  if (values.some((value, index) => !Number.isFinite(value) || value <= 0 || value >= 200 || (index && value <= values[index - 1]))) {
+    $('zone-error').textContent = 'Enter three increasing boundaries between 0°C and 200°C (32°F and 392°F).';
+    return;
   }
-  return [
-    { key: 'temp', title: 'Temperature', unit: '°C', sensors: temp },
-    { key: 'fan', title: 'Fan speed', unit: 'RPM', sensors: fans },
-    { key: 'load', title: 'CPU & GPU utilization', unit: '%', sensors: load },
-  ].filter((g) => g.sensors.length > 0);
+  zoneBounds = values;
+  try { localStorage.setItem('temp-logger.zone-bounds', JSON.stringify(values)); } catch {}
+  $('zone-error').textContent = 'Display guides saved. These are not Apple temperature limits.';
+  renderCards(currentReadings);
+  Object.values(charts).forEach(entry => { if (entry.sourceDatasets) renderChartUnits(entry); });
+});
+
+function zoneText(value) {
+  const index = zoneBounds.findIndex(bound => value < bound);
+  const zone = index < 0 ? 3 : index;
+  const label = zone === 0 ? `< ${fmtValue(zoneBounds[0], '°C')}` : zone === 3 ? `≥ ${fmtValue(zoneBounds[2], '°C')}` : `${displayValue(zoneBounds[zone - 1], '°C').toFixed(0)}–${fmtValue(zoneBounds[zone], '°C')}`;
+  return `Guide zone ${zone + 1} · ${label}`;
 }
 
-function baseOptions(unit, tooltipTitle, tooltipLabel, tooltipFilter) {
+const guideZones = {
+  id: 'temperatureGuideZones',
+  beforeDraw(chart) {
+    const axis = chart.scales.temperature;
+    if (!axis || !chart.chartArea) return;
+    const { left, right, top, bottom } = chart.chartArea;
+    const limits = [axis.min, ...zoneBounds.map(value => displayValue(value, '°C')), axis.max];
+    const colors = ['rgba(77,208,225,0.025)', 'rgba(156,204,101,0.035)', 'rgba(255,176,32,0.06)', 'rgba(255,93,93,0.08)'];
+    const ctx = chart.ctx;
+    ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
+    for (let i = 0; i < 4; i++) {
+      const low = Math.max(axis.min, limits[i]), high = Math.min(axis.max, limits[i + 1]);
+      if (low >= high) continue;
+      const yTop = axis.getPixelForValue(high), yBottom = axis.getPixelForValue(low);
+      ctx.fillStyle = colors[i]; ctx.fillRect(left, yTop, right - left, yBottom - yTop);
+      ctx.fillStyle = '#8b949e'; ctx.font = '10px -apple-system, sans-serif';
+      ctx.fillText(`Z${i + 1}`, left + 5, Math.min(yBottom - 3, yTop + 12));
+    }
+    ctx.restore();
+  },
+};
+
+// One shared time axis, with separate scales for each physical unit.
+function sensorAxis(sensor) {
+  return sensorUnit(sensor) === 'RPM' ? 'fans' : sensorUnit(sensor) === '%' ? 'load' : 'temperature';
+}
+
+function chartOptions(trends) {
+  const axis = (title, position, grid = false) => ({
+    type: 'linear', position,
+    ticks: { color: '#8b949e', maxTicksLimit: 7, callback: value => Number(value.toFixed(1)).toLocaleString() },
+    grid: { drawOnChartArea: grid, color: 'rgba(48,54,61,0.55)' },
+    title: { display: true, text: title, color: '#8b949e' },
+  });
   return {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    normalized: true,
-    interaction: { mode: 'index', intersect: false },
+    responsive: true, maintainAspectRatio: false, animation: false, normalized: true,
+    parsing: false,
+    interaction: { mode: 'index', axis: 'x', intersect: false },
     plugins: {
-      legend: {
-        position: 'top',
-        labels: { color: '#c9d1d9', usePointStyle: true, pointStyle: 'line' },
-      },
+      legend: { display: !trends, position: 'top', labels: { color: '#c9d1d9', usePointStyle: true, pointStyle: 'line' } },
       tooltip: {
-        callbacks: { title: tooltipTitle, label: tooltipLabel },
-        filter: tooltipFilter,
+        callbacks: {
+          title: items => items.length ? fullLabel(items[0].parsed.x) : '',
+          label: item => ` ${item.dataset.label}: ${fmtValue(item.parsed.y, displayUnit(item.dataset.unit))}`,
+        },
+        filter: item => !trends || item.dataset.band === 'avg',
       },
     },
     scales: {
       x: {
-        ticks: { color: '#8b949e', maxTicksLimit: 10, maxRotation: 0 },
+        type: 'linear',
+        ticks: { color: '#8b949e', maxTicksLimit: 8, maxRotation: 0,
+          callback: value => tickLabel(value, trends ? trendMs : rangeMs, trends) },
         grid: { color: 'rgba(48,54,61,0.55)' },
       },
-      y: {
-        ...(unit === '%' ? { min: 0, max: 100 } : {}),
-        ticks: {
-          color: '#8b949e',
-          callback: (v) =>
-            unit === 'RPM' ? Math.round(v).toLocaleString() : Number(v.toFixed(1)),
+      temperature: {
+        ...axis(`Temperature (${temperatureUnit}) · guide zones`, 'left', true),
+        suggestedMin: displayValue(20, '°C'), suggestedMax: displayValue(Math.max(100, zoneBounds[2] + 5), '°C'),
+        afterBuildTicks: scale => {
+          const values = [...new Set([...scale.ticks.map(tick => tick.value), ...zoneBounds.map(value => displayValue(value, '°C'))])];
+          scale.ticks = values.filter(value => value >= scale.min && value <= scale.max).sort((a, b) => a - b).map(value => ({ value }));
         },
-        grid: { color: 'rgba(48,54,61,0.55)' },
-        title: { display: true, text: displayUnit(unit), color: '#8b949e' },
+        ticks: {
+          color: '#8b949e', autoSkip: false,
+          callback: value => {
+            const index = zoneBounds.findIndex(bound => Math.abs(displayValue(bound, '°C') - value) < 0.01);
+            return `${Number(value.toFixed(1))}${index >= 0 ? ` · Z${index + 2}` : ''}`;
+          },
+        },
       },
+      fans: { ...axis('Fans (RPM)', 'right'), beginAtZero: true },
+      load: { ...axis('Workload (%)', 'right'), min: 0, max: 100 },
     },
   };
 }
 
-function makeHistoryChart(canvasId, unit) {
-  const chart = new Chart(
-    $(canvasId).getContext('2d'),
-    {
-      type: 'line',
-      data: { labels: [], datasets: [] },
-      options: baseOptions(
-        unit,
-        (items) =>
-          items.length ? fullLabel(charts[canvasId].timestamps[items[0].dataIndex]) : '',
-        (item) => ` ${item.dataset.label}: ${fmtValue(item.parsed.y, displayUnit(unit))}`,
-        undefined
-      ),
-    }
-  );
-  charts[canvasId] = { chart, timestamps: [] };
-}
-
-function makeTrendChart(canvasId, unit) {
-  const chart = new Chart(
-    $(canvasId).getContext('2d'),
-    {
-      type: 'line',
-      data: { labels: [], datasets: [] },
-      options: baseOptions(
-        unit,
-        (items) =>
-          items.length ? fullLabel(charts[canvasId].timestamps[items[0].dataIndex]) : '',
-        (item) => ` ${item.dataset.label}: ${fmtValue(item.parsed.y, displayUnit(unit))}`,
-        // Only the average lines appear in the tooltip; the band is visual.
-        (item) => item.datasetIndex % 3 === 2
-      ),
-    }
-  );
-  chart.options.plugins.legend.display = false;
-  chart.update();
-  charts[canvasId] = { chart, timestamps: [] };
-}
-
 function buildChartBlocks() {
-  for (const [containerId, prefix, withChips] of [
-    ['history-charts', 'hist', false],
-    ['trend-charts', 'trend', true],
+  for (const [containerId, canvasId, trends] of [
+    ['history-charts', 'history-chart', false],
+    ['trend-charts', 'trend-chart', true],
   ]) {
     const container = $(containerId);
-    container.innerHTML = '';
-    for (const g of groups()) {
-      const canvasId = `${prefix}-${g.key}`;
-      const block = document.createElement('div');
-      block.className = 'chart-block';
-      block.innerHTML =
-        `<h3>${g.title}</h3>` +
-        `<div class="chart-wrap"><canvas id="${canvasId}"></canvas>` +
-        `<div id="${canvasId}-empty" class="chart-empty hidden">No data in this range yet.</div></div>` +
-        (withChips ? `<div class="chip-legend" id="chips-${canvasId}"></div>` : '');
-      container.appendChild(block);
-      if (prefix === 'hist') makeHistoryChart(canvasId, g.unit);
-      else makeTrendChart(canvasId, g.unit);
-    }
+    container.innerHTML = `<div class="chart-wrap combined-chart"><canvas id="${canvasId}" aria-label="${trends ? 'Long-term trends' : 'Detailed history'} for temperature, fans, and workload" role="img"></canvas>` +
+      `<div id="${canvasId}-empty" class="chart-empty hidden">No data in this range yet.</div></div>` +
+      (trends ? '<div class="chip-legend" id="chips-trend"></div>' : '');
+    charts[canvasId] = {
+      chart: new Chart($(canvasId).getContext('2d'), {
+        type: 'line', data: { datasets: [] }, options: chartOptions(trends), plugins: [guideZones],
+      }),
+    };
   }
-  buildTrendChips();
-}
-
-function buildTrendChips() {
-  for (const g of groups()) {
-    const wrap = $(`chips-trend-${g.key}`);
-    if (!wrap) continue;
-    wrap.innerHTML = '';
-    g.sensors.forEach((s, si) => {
-      const chip = document.createElement('button');
-      chip.className = 'chip';
-      chip.innerHTML =
-        `<span class="swatch" style="background:${sensorColor(s)}"></span>${sensorLabel(s)}`;
-      chip.addEventListener('click', () => {
-        const entry = charts[`trend-${g.key}`];
-        const base = si * 3;
-        const next = !entry.chart.isDatasetVisible(base + 2);
-        for (let k = 0; k < 3; k++) entry.chart.setDatasetVisibility(base + k, next);
-        chip.classList.toggle('off', !next);
-        entry.chart.update();
-      });
-      wrap.appendChild(chip);
+  const wrap = $('chips-trend');
+  sensorList.forEach((sensor, index) => {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.setAttribute('aria-pressed', 'true');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch'; swatch.style.background = sensorColor(sensor);
+    chip.append(swatch, document.createTextNode(sensorLabel(sensor)));
+    chip.addEventListener('click', () => {
+      const chart = charts['trend-chart'].chart;
+      const base = index * 3;
+      const visible = !chart.isDatasetVisible(base + 2);
+      for (let k = 0; k < 3; k++) chart.setDatasetVisibility(base + k, visible);
+      chip.classList.toggle('off', !visible);
+      chip.setAttribute('aria-pressed', String(visible));
+      chart.update();
     });
-  }
+    wrap.appendChild(chip);
+  });
 }
 
-function unionTimestamps(series, sensors, getTs) {
-  return [
-    ...new Set(sensors.flatMap((s) => (series[s] || []).map(getTs))),
-  ].sort((a, b) => a - b);
+function unionTimestamps(series) {
+  return [...new Set(sensorList.flatMap(sensor => (series[sensor] || []).map(point => point.ts)))].sort((a, b) => a - b);
 }
 
+function datasetStyle(sensor) {
+  return {
+    sensor, unit: sensorUnit(sensor), yAxisID: sensorAxis(sensor),
+    label: sensorLabel(sensor), borderColor: sensorColor(sensor),
+    borderWidth: sensor.endsWith('_peak') ? 1 : 2,
+    borderDash: sensor.endsWith('_peak') ? [4, 4] : [],
+    pointBackgroundColor: sensorColor(sensor), pointHoverRadius: 4,
+    tension: 0, spanGaps: true,
+  };
+}
+
+let historyRequest = 0;
 async function refreshHistory() {
-  const to = Date.now();
-  const from = to - rangeMs;
-  const res = await fetch(`/api/history?from=${from}&to=${to}&maxPoints=1200`);
+  const request = ++historyRequest;
+  const to = Date.now(), from = to - rangeMs;
+  const res = await fetch(`/api/history?from=${from}&to=${to}&maxPoints=5000`);
   const { series } = await res.json();
-  for (const g of groups()) {
-    const canvasId = `hist-${g.key}`;
-    const entry = charts[canvasId];
-    if (!entry) continue;
-    const sensors = g.sensors.filter((s) => series[s] && series[s].length);
-    $(`${canvasId}-empty`).classList.toggle('hidden', sensors.length > 0);
-
-    const allTs = unionTimestamps(series, g.sensors, (p) => p.ts);
-    entry.timestamps = allTs;
-    const byTs = {};
-    for (const s of g.sensors) {
-      byTs[s] = new Map((series[s] || []).map((p) => [p.ts, p.value_c]));
-    }
-    entry.chart.data.labels = allTs.map((ts) => tickLabel(ts, rangeMs, false));
-    const datasets = sensors.map((s) => {
-      const color = sensorColor(s);
-      return {
-        label: sensorLabel(s),
-        data: allTs.map((ts) =>
-          byTs[s].has(ts) ? byTs[s].get(ts) : null
-        ),
-        borderColor: color,
-        backgroundColor: hexA(color, 0.07),
-        fill: true,
-        tension: 0.25,
-        borderWidth: 2,
-        pointRadius: series[s].length === 1 ? 3 : 0,
-        pointBackgroundColor: color,
-        pointHoverRadius: 4,
-        spanGaps: true,
-      };
-    });
-    setChartDatasets(entry, datasets, g.unit);
-  }
+  if (request !== historyRequest) return;
+  const timestamps = unionTimestamps(series);
+  const entry = charts['history-chart'];
+  $('history-chart-empty').classList.toggle('hidden', timestamps.length > 0);
+  entry.chart.options.scales.x.min = from;
+  entry.chart.options.scales.x.max = to;
+  const datasets = sensorList.map(sensor => {
+    const points = series[sensor] || [];
+    const values = new Map(points.map(point => [point.ts, point.value_c]));
+    return {
+      ...datasetStyle(sensor), fill: false,
+      data: timestamps.map(x => ({ x, y: values.get(x) ?? null })),
+      pointRadius: points.length === 1 ? 3 : 0,
+    };
+  });
+  setChartDatasets(entry, datasets);
 }
 
+let trendRequest = 0;
 async function refreshTrends() {
-  const to = Date.now();
-  const from = to - trendMs;
+  const request = ++trendRequest;
+  const to = Date.now(), from = to - trendMs;
   const res = await fetch(`/api/aggregate?from=${from}&to=${to}`);
-  const { series, bucket } = await res.json();
-  const daily = bucket === 'day';
-  for (const g of groups()) {
-    const canvasId = `trend-${g.key}`;
-    const entry = charts[canvasId];
-    if (!entry) continue;
-    const sensors = g.sensors.filter((s) => series[s] && series[s].length);
-    $(`${canvasId}-empty`).classList.toggle('hidden', sensors.length > 0);
-
-    const allTs = unionTimestamps(series, g.sensors, (p) => p.ts);
-    entry.timestamps = allTs;
-    const datasets = [];
-    for (const s of g.sensors) {
-      const color = sensorColor(s);
-      const byTs = new Map((series[s] || []).map((p) => [p.ts, p]));
-      const col = (k) => allTs.map((ts) => (byTs.has(ts) ? byTs.get(ts)[k] : null));
-      datasets.push(
-        {
-          label: `${sensorLabel(s)} max`,
-          data: col('max'),
-          borderColor: 'transparent',
-          pointRadius: 0,
-          spanGaps: true,
-        },
-        {
-          label: `${sensorLabel(s)} min`,
-          data: col('min'),
-          borderColor: 'transparent',
-          backgroundColor: hexA(color, 0.18),
-          fill: '-1',
-          pointRadius: 0,
-          spanGaps: true,
-        },
-        {
-          label: sensorLabel(s),
-          data: col('avg'),
-          borderColor: color,
-          borderWidth: 2,
-          tension: 0.25,
-          pointRadius: (series[s] || []).length === 1 ? 3 : 0,
-          pointBackgroundColor: color,
-          pointHoverRadius: 4,
-          spanGaps: true,
-        }
-      );
+  const { series } = await res.json();
+  if (request !== trendRequest) return;
+  const timestamps = unionTimestamps(series);
+  const entry = charts['trend-chart'];
+  $('trend-chart-empty').classList.toggle('hidden', timestamps.length > 0);
+  entry.chart.options.scales.x.min = from;
+  entry.chart.options.scales.x.max = to;
+  const datasets = [];
+  for (const sensor of sensorList) {
+    const points = series[sensor] || [];
+    const values = new Map(points.map(point => [point.ts, point]));
+    for (const band of ['max', 'min', 'avg']) {
+      datasets.push({
+        ...datasetStyle(sensor), band,
+        label: band === 'avg' ? sensorLabel(sensor) : `${sensorLabel(sensor)} ${band}`,
+        data: timestamps.map(x => ({ x, y: values.get(x)?.[band] ?? null })),
+        borderColor: band === 'avg' ? sensorColor(sensor) : 'transparent',
+        backgroundColor: hexA(sensorColor(sensor), 0.08),
+        fill: band === 'min' ? '-1' : false,
+        pointRadius: band === 'avg' && points.length === 1 ? 3 : 0,
+      });
     }
-    entry.chart.data.labels = allTs.map((ts) => tickLabel(ts, trendMs, daily));
-    setChartDatasets(entry, datasets, g.unit);
   }
+  setChartDatasets(entry, datasets);
 }
 
 function renderCards(latest) {
@@ -383,7 +365,7 @@ function renderCards(latest) {
   const bySensor = Object.fromEntries(latest.map((r) => [r.sensor, r]));
   const wrap = $('cards');
   wrap.innerHTML = '';
-  for (const s of sensorList.filter(sensor => sensorUnit(sensor) !== '%')) {
+  for (const s of sensorList.filter(sensor => sensor === 'cpu' || sensor === 'gpu')) {
     const row = bySensor[s];
     const unit = sensorUnit(s);
     const el = document.createElement('div');
@@ -393,7 +375,9 @@ function renderCards(latest) {
       `<div class="sensor-name">${sensorLabel(s)}</div>` +
       (row
         ? `<div class="temp">${fmtValue(row.value_c, unit).replace(/ (RPM|°C|°F|%)$/, '<small> $1</small>')}</div>` +
-          `<div class="updated">updated ${ago(row.ts)}</div>`
+          `<div class="updated">updated ${ago(row.ts)}</div>` +
+          `<div class="thermal-zone">${zoneText(row.value_c)}</div>` +
+          `<div class="thermal-state">macOS: ${thermalStatus?.state?.label || 'Unavailable'}${thermalStatus?.state?.level === 3 ? ' · performance impacted' : thermalStatus?.state?.level === 2 ? ' · high thermal pressure' : ''}</div>`
         : `<div class="temp">&mdash;</div><div class="updated">no data yet</div>`);
     wrap.appendChild(el);
   }
@@ -436,6 +420,17 @@ function renderStats(stats, latest) {
       `<td>${st.n.toLocaleString()}</td>`;
     tbody.appendChild(tr);
   }
+}
+
+async function refreshThermal() {
+  try {
+    const response = await fetch('/api/thermal', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Thermals unavailable');
+    thermalStatus = await response.json();
+    if (thermalStatus.latest) {
+      renderCards(Object.entries(thermalStatus.latest.readings).map(([sensor, value_c]) => ({ sensor, value_c, ts: thermalStatus.latest.ts })));
+    }
+  } catch { thermalStatus = null; renderCards(currentReadings); }
 }
 
 function renderLiveWorkload(status) {
@@ -559,15 +554,13 @@ async function init() {
   await refreshStatus();
   const { latest } = await (await fetch('/api/current')).json();
   renderCards(latest);
+  await refreshThermal();
   await refreshHistory();
   await refreshStats();
   await refreshTrends();
 
   setInterval(refreshStatus, 15000);
-  setInterval(async () => {
-    const { latest } = await (await fetch('/api/current')).json();
-    renderCards(latest);
-  }, 15000);
+  setInterval(refreshThermal, 5000);
   setInterval(() => {
     refreshHistory();
     refreshStats();
