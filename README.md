@@ -48,8 +48,11 @@ instructions; real mode never silently substitutes demo data.
 - Current CPU/GPU temperatures and per-fan speed (RPM).
 - Header °C/°F toggle updates all temperature displays and remembers your choice
   in this browser. Stored readings and API values always remain in Celsius.
-- Separate temperature and fan history charts over 1H–30D.
-- Hourly/daily min/max bands and average lines over 7D–90D.
+- One detailed chart overlays temperature, fans, and workload over 1H–30D,
+  with independent °C/°F, RPM, and 0–100% axes and up to 5,000 saved points per series.
+  Values use their actual timestamps. Click legend entries to isolate series.
+- One combined long-term chart shows hourly/daily min/max bands and average
+  lines over 7D–90D, with per-sensor toggle chips.
 - Current/min/max/average/sample count per sensor.
 - App version from `package.json`, displayed in the header and `/api/status`.
 
@@ -120,7 +123,7 @@ not zero. Short bursts between polls can still be missed.
 
 Only summaries are saved with each thermal sample (five minutes by default):
 `cpu_load` / `gpu_load` are averages, and `cpu_peak` / `gpu_peak` are sampled peaks.
-All four use `%` metadata and have their own 0–100% charts. CPU averages are
+All four use `%` metadata and the 0–100% workload axis in both combined charts. CPU averages are
 weighted by observed CPU time; GPU averages are the mean of valid observations.
 The first summary appears after the first storage interval. Live observations
 remain in memory and do not create extra SQLite rows. Shutdown or a crash may
@@ -168,3 +171,28 @@ Logs are in `~/Library/Logs/temp-logger/`. Agent definitions are in
 stores data in its `data/temps.db`; keep that checkout available. Native builds
 use Apple's Swift compiler and Cocoa/WebKit frameworks, with no added npm
 runtime dependencies. `npm run build:desktop` creates the app bundle in `dist/`.
+
+
+## Thermal pressure and display guides
+
+Current CPU/GPU cards refresh from live sensor observations about every five
+seconds, independently of five-minute database writes. `/api/thermal` exposes
+these live readings and macOS's system-wide thermal-pressure state. The native
+helper built by `npm run build:desktop` reads Foundation's `ProcessInfo.thermalState`:
+Nominal (normal limits), Fair (slightly elevated), Serious (high), or Critical
+(significant performance impact). Unavailable telemetry is shown as unavailable.
+This is a system thermal-pressure signal, not a measurement of exact CPU clock
+reduction or a per-chip throttle flag.
+
+Apple publishes no fixed die-temperature boundaries in its thermal-state API.
+The Mac Studio's 10–35°C operating specification is **ambient room temperature**,
+not a CPU/GPU temperature target. See [Apple's thermal-state definitions](https://developer.apple.com/documentation/foundation/processinfo/thermalstate-swift.enum)
+and [Mac Studio handling guidance](https://support.apple.com/en-ie/guide/mac-studio/apd876e1a2ea/2026/mac/27).
+
+Numbered chart/card zones are **app-defined visual guides**, not Apple limits or
+recommended safe temperatures. Defaults are below 60°C, 60–80°C, 80–95°C, and
+95°C or above. Edit the three boundaries in “Temperature guide zones”; choices
+are stored in this browser. Boundaries and axis labels convert with °C/°F.
+Use macOS pressure to assess reported thermal stress rather than inferring a
+throttle event from a guide-zone number. Historical chart bands are guides,
+not historical measurements of macOS thermal pressure.

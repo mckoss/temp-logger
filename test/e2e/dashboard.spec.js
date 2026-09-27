@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 
 test.describe('dashboard', () => {
-  test('loads, shows demo status, and renders sensor cards with units', async ({
+  test('loads, shows demo status, and renders only temperature cards', async ({
     page,
   }) => {
     await page.goto('/');
@@ -23,16 +23,17 @@ test.describe('dashboard', () => {
     await expect(page.locator('.card').first()).toBeVisible({ timeout: 15000 });
     const cardText = await page.locator('#cards').innerText();
     expect(cardText).toMatch(/°C/);
-    expect(cardText).toMatch(/RPM/);
+    expect(cardText).not.toMatch(/RPM/);
+    await expect(page.locator('#cards .card')).toHaveCount(2);
   });
 
-  test('history charts render per unit group and range switching works', async ({
+  test('combined history renders and range switching works', async ({
     page,
   }) => {
     await page.goto('/');
-    // Temperature chart and fan chart render as separate canvases.
-    await expect(page.locator('#hist-temp')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('#hist-fan')).toBeVisible({ timeout: 15000 });
+    // All sensors share a single history canvas.
+    await expect(page.locator('#history-chart')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('canvas')).toHaveCount(2);
 
     // Wait for data to land in the stats table, then switch ranges.
     await expect(page.locator('#stats-table tbody tr').first()).toBeVisible({
@@ -48,10 +49,9 @@ test.describe('dashboard', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.locator('#trend-temp')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('#trend-fan')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#trend-chart')).toBeVisible({ timeout: 15000 });
     // Per-sensor toggle chips exist under each trend chart.
-    await expect(page.locator('#chips-trend-temp .chip').first()).toBeVisible();
+    await expect(page.locator('#chips-trend .chip').first()).toBeVisible();
     await page.locator('#trend-ranges').getByRole('button', { name: '7D' }).click();
     await expect(page.locator('#trend-ranges button.active')).toHaveText('7D');
   });
@@ -175,9 +175,9 @@ test('charts handle a missing sensor and keep trend toggles aligned', async ({ p
     await route.fulfill({ json: body });
   });
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-temp')?.data.datasets.length)).toBe(6);
-  await page.locator('#chips-trend-temp').getByRole('button', { name: 'GPU', exact: true }).click();
-  expect(await page.evaluate(() => Chart.getChart('trend-temp').isDatasetVisible(5))).toBe(false);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
+  await page.locator('#chips-trend').getByRole('button', { name: 'GPU', exact: true }).click();
+  expect(await page.evaluate(() => Chart.getChart('trend-chart').isDatasetVisible(5))).toBe(false);
   await page.locator('#trend-ranges').getByRole('button', { name: '7D', exact: true }).click();
   await expect(page.locator('#trend-ranges button.active')).toHaveText('7D');
   await page.unrouteAll({ behavior: 'wait' });
@@ -187,7 +187,7 @@ test('charts handle a missing sensor and keep trend toggles aligned', async ({ p
 test('dashboard fits a narrow screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await expect(page.locator('#cards .card')).toHaveCount(4);
+  await expect(page.locator('#cards .card')).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -197,11 +197,42 @@ test('single-sample charts show visible points and concise axis labels', async (
     series: { cpu: [{ ts: Date.now(), value_c: 62.3 }], gpu: [{ ts: Date.now(), value_c: 60.5 }] },
   } }));
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('hist-temp')?.data.datasets.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(8);
   const chart = await page.evaluate(() => {
-    const chart = Chart.getChart('hist-temp');
-    return { radius: chart.data.datasets[0].pointRadius, labels: chart.scales.y.ticks.map(tick => String(tick.label)) };
+    const chart = Chart.getChart('history-chart');
+    return { radius: chart.data.datasets[0].pointRadius, labels: chart.scales.temperature.ticks.map(tick => String(tick.label)) };
   });
   expect(chart.radius).toBeGreaterThan(0);
-  expect(chart.labels.every(label => label.length < 8)).toBeTruthy();
+  expect(chart.labels.every(label => label.length < 14)).toBeTruthy();
+});
+
+test('two combined charts use independent unit axes and fill the window', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const ts = Date.now() - 60000;
+  let maxPoints;
+  await page.route('**/api/history?*', route => {
+    maxPoints = new URL(route.request().url()).searchParams.get('maxPoints');
+    return route.fulfill({ json: { series: {
+      cpu: [{ ts, value_c: 50 }, { ts: ts + 10000, value_c: 60 }, { ts: ts + 50000, value_c: 55 }],
+      fan1: [{ ts, value_c: 2000 }], cpu_load: [{ ts, value_c: 75 }], gpu_load: [{ ts, value_c: 25 }],
+    } } });
+  });
+  await page.goto('/');
+  await expect(page.locator('canvas')).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(8);
+  expect(maxPoints).toBe('5000');
+  const details = await page.evaluate(() => {
+    const chart = Chart.getChart('history-chart');
+    const cpu = chart.data.datasets.find(dataset => dataset.sensor === 'cpu');
+    const x = cpu.data.map(point => chart.scales.x.getPixelForValue(point.x));
+    return { axes: Object.fromEntries(chart.data.datasets.map(dataset => [dataset.sensor, dataset.yAxisID])), spacingRatio: (x[2] - x[1]) / (x[1] - x[0]), cardWidths: [...document.querySelectorAll('#cards .card')].map(card => card.getBoundingClientRect().width) };
+  });
+  expect(details.axes.cpu).toBe('temperature');
+  expect(details.axes.fan1).toBe('fans');
+  expect(details.axes.cpu_load).toBe('load');
+  expect(details.axes.gpu_load).toBe('load');
+  expect(details.spacingRatio).toBeCloseTo(4);
+  expect(details.cardWidths).toHaveLength(2);
+  expect(details.cardWidths[0]).toBeGreaterThan(600);
+  expect(details.cardWidths[0]).toBe(details.cardWidths[1]);
 });

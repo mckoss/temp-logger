@@ -7,6 +7,7 @@ if (process.platform !== 'darwin') throw new Error('The desktop window requires 
 const { version, config } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const bundle = join(root, 'dist', 'Temp Logger.app', 'Contents');
 mkdirSync(join(bundle, 'MacOS'), { recursive: true });
+execFileSync('/usr/bin/xcrun', ['swiftc', join(root, 'native', 'ThermalStatus.swift'), '-o', join(root, 'dist', 'thermal-status'), '-framework', 'Foundation'], { stdio: 'inherit' });
 execFileSync('/usr/bin/xcrun', ['swiftc', join(root, 'native', 'TempLogger.swift'), '-o', join(bundle, 'MacOS', 'TempLogger'), '-framework', 'Cocoa', '-framework', 'WebKit'], { stdio: 'inherit' });
 writeFileSync(join(bundle, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
