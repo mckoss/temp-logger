@@ -34,6 +34,7 @@ it('reduces frequent samples into weighted CPU averages and sampled peaks withou
   assert.deepEqual((await monitor.flush()).readings, {});
   assert.deepEqual(monitor.status().current, { cpu: 0, gpu: 80 });
   assert.equal(monitor.status().coreCount, 30);
+  assert.deepEqual(monitor.recent().map(({ cpu, gpu }) => [cpu, gpu]), [[50, 20], [0, 80]]);
 });
 
 it('keeps CPU samples when GPU is unavailable without inventing idle GPU readings', async () => {
@@ -44,6 +45,7 @@ it('keeps CPU samples when GPU is unavailable without inventing idle GPU reading
   assert.equal(summary.readings.cpu_load, 50);
   assert.equal(summary.readings.gpu_load, undefined);
   assert.equal(monitor.status().current.gpu, null);
+  assert.equal(monitor.recent()[0].gpu, null);
   assert.match(monitor.status().lastError, /GPU: missing/);
 });
 

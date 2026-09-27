@@ -203,10 +203,10 @@ const guideZones = {
   },
 };
 
-// Three independent vertical scales, with exactly aligned plot areas and time bounds.
-const GROUP_KINDS = ['temperature', 'fans', 'power'];
+// Independent vertical scales, with exactly aligned plot areas and time bounds.
+const GROUP_KINDS = ['temperature', 'utilization', 'fans', 'power'];
 const chartId = (group, kind) => kind === 'temperature' ? `${group}-chart` : `${group}-${kind}`;
-const groupSensors = kind => sensorList.filter(sensor => kind === 'temperature' ? ['cpu', 'gpu'].includes(sensor) : sensorUnit(sensor) === 'RPM');
+const groupSensors = kind => sensorList.filter(sensor => kind === 'temperature' ? ['cpu', 'gpu'].includes(sensor) : kind === 'utilization' ? ['cpu_load', 'gpu_load'].includes(sensor) : sensorUnit(sensor) === 'RPM');
 const cursorTimes = {};
 const sharedCursor = {
   id: 'sharedCursor',
@@ -251,7 +251,7 @@ function chartOptions(group, kind) {
     type: 'linear', position: 'left', afterFit: scale => { scale.width = 92; },
     ticks: { color: '#8b949e', maxTicksLimit: kind === 'temperature' ? 7 : 4, callback: value => kind === 'power' && trends ? value.toLocaleString(undefined, { maximumSignificantDigits: 3 }) : Number(value.toFixed(2)).toLocaleString() },
     grid: { color: 'rgba(48,54,61,0.55)' },
-    title: { display: true, color: '#8b949e', text: kind === 'temperature' ? `Temperature (${temperatureUnit}) · guide zones` : kind === 'fans' ? 'Fans (RPM)' : trends ? 'Energy (kWh)' : 'Power (W)' },
+    title: { display: true, color: '#8b949e', text: kind === 'temperature' ? `Temperature (${temperatureUnit}) · guide zones` : kind === 'utilization' ? 'Utilization (%)' : kind === 'fans' ? 'Fans (RPM)' : trends ? 'Energy (kWh)' : 'Power (W)' },
   };
   if (kind === 'temperature') {
     y.suggestedMin = displayValue(30, '°C'); y.suggestedMax = displayValue(80, '°C');
@@ -267,6 +267,7 @@ function chartOptions(group, kind) {
       return `${Number(value.toFixed(1))}${index >= 0 ? ` · Z${index + 2}` : ''}`;
     };
   } else y.beginAtZero = true;
+  if (kind === 'utilization') { y.min = 0; y.max = 100; }
   return {
     responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
     layout: { padding: { right: 12 } },
@@ -301,7 +302,12 @@ function buildChartBlocks() {
     for (const kind of GROUP_KINDS) {
       const id = chartId(group, kind), trends = group === 'trend';
       const zone = document.createElement('div'); zone.className = `plot-zone plot-${kind}`;
-      zone.innerHTML = `<div class="plot-heading"><h3>${kind === 'temperature' ? 'Temperatures' : kind === 'fans' ? 'Fans' : 'Power'}</h3><div class="chip-legend" id="chips-${group}-${kind}"></div></div><div class="chart-wrap"><canvas id="${id}" role="img" aria-label="${trends ? 'Long-term' : 'Real-time'} ${kind}"></canvas><div id="${id}-empty" class="chart-empty hidden">No readings in this period</div></div>`;
+      zone.innerHTML = `<div class="plot-heading"><h3>${kind === 'temperature' ? 'Temperatures' : kind === 'utilization' ? 'CPU / GPU utilization' : kind === 'fans' ? 'Fans' : 'Power'}</h3><div class="chip-legend" id="chips-${group}-${kind}"></div></div><div class="chart-wrap"><canvas id="${id}" role="img" aria-label="${trends ? 'Long-term' : 'Real-time'} ${kind}"></canvas><div id="${id}-empty" class="chart-empty hidden">No readings in this period</div></div>`;
+      if (kind === 'utilization') {
+        const note = document.createElement('p'); note.className = 'fine';
+        note.textContent = trends ? 'Daily averages and min–max bands of saved interval averages · 100% CPU = all cores busy' : 'Recent one-second samples · earlier five-minute averages · 100% CPU = all cores busy';
+        zone.querySelector('.plot-heading').after(note);
+      }
       container.appendChild(zone);
       const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [guideZones, sharedCursor, sensorRanges] });
       chart.$group = group;
@@ -348,7 +354,7 @@ async function refreshHistory() {
       fetch(`/api/power?from=${from}&to=${to}`).then(res => res.json()),
     ]);
     if (request !== historyRequest) return;
-    for (const kind of ['temperature', 'fans']) {
+    for (const kind of ['temperature', 'utilization', 'fans']) {
       updatePlot('history', kind, from, to, groupSensors(kind).map(sensor => {
         const points = mergeLive(history.series[sensor] || [], live.series[sensor], from, to);
         const bounds = {};
@@ -389,7 +395,7 @@ async function refreshTrends() {
       fetch(`/api/power?from=${from}&to=${to}&bucket=${bucket}`).then(res => res.json()),
     ]);
     if (request !== trendRequest) return;
-    for (const kind of ['temperature', 'fans']) {
+    for (const kind of ['temperature', 'utilization', 'fans']) {
       const datasets = [];
       for (const sensor of groupSensors(kind)) {
         const points = aggregate.series[sensor] || [];

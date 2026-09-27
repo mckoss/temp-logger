@@ -37,5 +37,32 @@ test('workload summaries are stored with thermal readings as percentages', async
   await page.goto('/');
   await expect(page.locator('#history-chart')).toBeVisible();
   await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(2);
-  expect(await page.evaluate(() => Object.values(Chart.instances).flatMap(chart => chart.data.datasets.map(dataset => dataset.unit)))).not.toContain('%');
+  expect(await page.evaluate(() => Object.values(Chart.instances).flatMap(chart => chart.data.datasets.map(dataset => dataset.unit)))).toContain('%');
+});
+
+
+test('utilization history preserves live fluctuations, missing data, percent units and daily averages', async ({ page }) => {
+  const ts = Date.now() - 60000;
+  await page.route('**/api/history?*', route => route.fulfill({ json: { series: {
+    cpu_load: [{ ts: ts - 300000, value_c: 25 }], gpu_load: [{ ts: ts - 300000, value_c: 15 }],
+  } } }));
+  await page.route('**/api/live', route => route.fulfill({ json: { power: {}, series: {
+    cpu_load: [10, 95, 20].map((value_c, i) => ({ ts: ts + i * 1000, value_c })),
+    gpu_load: [0, null, 70].map((value_c, i) => ({ ts: ts + i * 1000, value_c })),
+  } } }));
+  await page.route('**/api/aggregate?*', route => route.fulfill({ json: { series: {
+    cpu_load: [{ ts, avg: 40, min: 5, max: 90 }], gpu_load: [{ ts, avg: 20, min: 0, max: 60 }],
+  } } }));
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-utilization')?.data.datasets[0]?.data.map(p => p.y))).toEqual([25, 10, 95, 20]);
+  expect(await page.evaluate(() => Chart.getChart('history-utilization').data.datasets[1].data.map(p => p.y))).toEqual([15, 0, null, 70]);
+  const inspect = () => page.evaluate(() => ['history', 'trend'].map(group => {
+    const c = Chart.getChart(`${group}-utilization`);
+    return { min: c.scales.utilization.min, max: c.scales.utilization.max, values: c.data.datasets.map(d => d.data.map(p => p.y)) };
+  }));
+  const before = await inspect();
+  expect(before.every(c => c.min === 0 && c.max === 100)).toBe(true);
+  expect(before[1].values).toEqual([[90], [5], [40], [60], [0], [20]]);
+  await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
+  expect(await inspect()).toEqual(before);
 });

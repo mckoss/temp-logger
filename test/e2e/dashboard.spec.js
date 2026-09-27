@@ -33,7 +33,7 @@ test.describe('dashboard', () => {
     await page.goto('/');
     // All sensors share a single history canvas.
     await expect(page.locator('#history-chart')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('canvas')).toHaveCount(6);
+    await expect(page.locator('canvas')).toHaveCount(8);
 
     // Wait for data to land in the stats table, then switch ranges.
     await expect(page.locator('#stats-table tbody tr').first()).toBeVisible({
@@ -207,7 +207,7 @@ test('single-sample charts show visible points and concise axis labels', async (
   expect(chart.labels.every(label => label.length < 14)).toBeTruthy();
 });
 
-test('two groups have three non-overlapping plots with one y-axis each and exactly aligned time axes', async ({ page }) => {
+test('two groups have four non-overlapping plots with one y-axis each and exactly aligned time axes', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
   const ts = Date.now() - 60000;
   await page.route('**/api/live', route => route.fulfill({ json: { series: {}, power: {} } }));
@@ -216,22 +216,23 @@ test('two groups have three non-overlapping plots with one y-axis each and exact
     fan1: [{ ts, value_c: 2000 }], cpu_load: [{ ts, value_c: 75 }],
   } } }));
   await page.goto('/');
-  await expect(page.locator('canvas')).toHaveCount(6);
+  await expect(page.locator('canvas')).toHaveCount(8);
   await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(2);
   for (const group of ['history', 'trend']) {
-    const plots = await page.evaluate(group => ['chart', 'fans', 'power'].map(kind => {
+    const plots = await page.evaluate(group => ['chart', 'utilization', 'fans', 'power'].map(kind => {
       const chart = Chart.getChart(`${group}-${kind}`), rect = chart.canvas.getBoundingClientRect();
       return { axes: Object.keys(chart.scales), left: chart.chartArea.left, right: chart.chartArea.right, min: chart.scales.x.min, max: chart.scales.x.max, timeVisible: chart.options.scales.x.display, top: rect.top, bottom: rect.bottom, units: chart.data.datasets.map(dataset => dataset.unit) };
     }), group);
-    expect(plots.map(plot => plot.axes)).toEqual([['x', 'temperature'], ['x', 'fans'], ['x', 'power']]);
-    expect(plots.map(plot => plot.timeVisible)).toEqual([false, false, true]);
+    expect(plots.map(plot => plot.axes)).toEqual([['x', 'temperature'], ['x', 'utilization'], ['x', 'fans'], ['x', 'power']]);
+    expect(plots.map(plot => plot.timeVisible)).toEqual([false, false, false, true]);
     expect(new Set(plots.map(plot => plot.left)).size).toBe(1);
     expect(new Set(plots.map(plot => plot.right)).size).toBe(1);
     expect(new Set(plots.map(plot => plot.min)).size).toBe(1);
     expect(new Set(plots.map(plot => plot.max)).size).toBe(1);
     expect(plots[0].bottom).toBeLessThan(plots[1].top);
     expect(plots[1].bottom).toBeLessThan(plots[2].top);
-    expect(plots.flatMap(plot => plot.units)).not.toContain('%');
+    expect(plots[1].units).toEqual(expect.arrayContaining(['%']));
+    expect(plots[2].bottom).toBeLessThan(plots[3].top);
   }
   const ratio = await page.evaluate(() => {
     const c = Chart.getChart('history-chart'), x = c.data.datasets[0].data.map(p => c.scales.x.getPixelForValue(p.x));

@@ -21,7 +21,7 @@ Follow Mike's global AGENTS.md guidance. This repository adds:
 - Workload is sampled in memory every second; summaries persist at the thermal
   interval. CPU percentages are normalized across all cores.
 
-- Chart groups stack temperature, fans, and power. Each plot must have only one
+- Chart groups stack temperature, utilization, fans, and power. Each plot must have only one
   y-axis; keep plot edges/time bounds aligned and time ticks on the bottom only.
 - Power is an explicitly labeled PD0R input-rail estimate, not wall consumption.
   Integrate valid observations only; preserve coverage/gaps in energy totals.
