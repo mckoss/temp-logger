@@ -35,6 +35,8 @@ async function refresh() {
     $('process-interval').textContent = `${status.intervalMs / 1000} seconds`;
     $('process-rows').textContent = status.rows.toLocaleString();
     $('process-power').textContent = status.power?.current ? `${status.power.current.watts.toFixed(1)} W · estimated input rail` : (status.power?.lastError || 'Unavailable');
+    const sources = status.thermal?.latest?.sources;
+    $('process-temperature-sources').textContent = sources ? Object.entries(sources).map(([sensor, source]) => `${sensor.toUpperCase()}: average of ${source.count} mapped sensors; hottest ${source.key || 'unavailable'}; ${Object.entries(source.values || {}).map(([key, value]) => `${key}: ${value.toFixed(1)}°C`).join(', ')}`).join(' / ') : 'Provided by sensor backend';
     $('process-thermal').textContent = status.thermal?.state?.label || 'Unavailable';
     $('process-backend').textContent = status.backendLabel;
     $('process-error').textContent = [status.lastError, status.workload?.lastError, status.thermal?.stateError, status.thermal?.sensorError, status.power?.lastError].filter(Boolean).join(' · ');

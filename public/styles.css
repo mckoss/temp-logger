@@ -366,3 +366,5 @@ table.stats td { white-space: nowrap; }
 .plot-temperature .chart-wrap { height: 260px; }
 .plot-power .chart-wrap { height: 175px; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 4px; }
+
+.sensor-range { font-size: 12px; color: var(--muted); margin-top: 6px; }

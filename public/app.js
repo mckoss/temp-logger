@@ -81,15 +81,15 @@ function renderChartUnits(entry) {
     [dataset.label, entry.chart.isDatasetVisible(index)]));
   entry.chart.data.datasets = entry.sourceDatasets.map(dataset => ({
     ...dataset,
-    data: dataset.data.map(point => ({ ...point, y: displayValue(point.y, dataset.unit) })),
+    data: dataset.data.map(point => ({ ...point, y: displayValue(point.y, dataset.unit), low: displayValue(point.low, dataset.unit), high: displayValue(point.high, dataset.unit) })),
   }));
   entry.chart.data.datasets.forEach((dataset, index) => {
     entry.chart.setDatasetVisibility(index, visibility.get(dataset.label) ?? true);
   });
   if (entry.chart.options.scales.temperature) {
     entry.chart.options.scales.temperature.title.text = `Temperature (${temperatureUnit}) · guide zones`;
-    entry.chart.options.scales.temperature.suggestedMin = displayValue(20, '°C');
-    entry.chart.options.scales.temperature.suggestedMax = displayValue(Math.max(100, zoneBounds[2] + 5), '°C');
+    entry.chart.options.scales.temperature.suggestedMin = displayValue(Math.min(30, ...(entry.rangeExtent || [])), '°C');
+    entry.chart.options.scales.temperature.suggestedMax = displayValue(Math.max(80, ...(entry.rangeExtent || [])), '°C');
   }
   entry.chart.update();
 }
@@ -206,7 +206,7 @@ const guideZones = {
 // Three independent vertical scales, with exactly aligned plot areas and time bounds.
 const GROUP_KINDS = ['temperature', 'fans', 'power'];
 const chartId = (group, kind) => kind === 'temperature' ? `${group}-chart` : `${group}-${kind}`;
-const groupSensors = kind => sensorList.filter(sensor => sensorUnit(sensor) === (kind === 'temperature' ? '°C' : 'RPM'));
+const groupSensors = kind => sensorList.filter(sensor => kind === 'temperature' ? ['cpu', 'gpu'].includes(sensor) : sensorUnit(sensor) === 'RPM');
 const cursorTimes = {};
 const sharedCursor = {
   id: 'sharedCursor',
@@ -223,6 +223,28 @@ const sharedCursor = {
     chart.ctx.beginPath(); chart.ctx.moveTo(x, top); chart.ctx.lineTo(x, bottom); chart.ctx.stroke(); chart.ctx.restore();
   },
 };
+// Min–max whiskers show the sensor spread, not statistical confidence.
+const sensorRanges = {
+  id: 'sensorRanges',
+  afterDatasetsDraw(chart) {
+    const axis = chart.scales.temperature;
+    if (!axis) return;
+    const { left, right, top, bottom } = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
+    chart.data.datasets.forEach((dataset, index) => {
+      if (!chart.isDatasetVisible(index) || dataset.band && dataset.band !== 'avg') return;
+      ctx.strokeStyle = dataset.borderColor; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
+      const step = Math.max(1, Math.ceil(dataset.data.length / Math.max(1, (right - left) / 12)));
+      dataset.data.forEach((point, i) => {
+        if (i % step && i !== dataset.data.length - 1 || point.low == null || point.high == null) return;
+        const x = chart.scales.x.getPixelForValue(point.x), lo = axis.getPixelForValue(point.low), hi = axis.getPixelForValue(point.high);
+        ctx.beginPath(); ctx.moveTo(x, lo); ctx.lineTo(x, hi);
+        ctx.moveTo(x - 3, lo); ctx.lineTo(x + 3, lo); ctx.moveTo(x - 3, hi); ctx.lineTo(x + 3, hi); ctx.stroke();
+      });
+    });
+    ctx.restore();
+  },
+};
 function chartOptions(group, kind) {
   const trends = group === 'trend';
   const y = {
@@ -232,7 +254,7 @@ function chartOptions(group, kind) {
     title: { display: true, color: '#8b949e', text: kind === 'temperature' ? `Temperature (${temperatureUnit}) · guide zones` : kind === 'fans' ? 'Fans (RPM)' : trends ? 'Energy (kWh)' : 'Power (W)' },
   };
   if (kind === 'temperature') {
-    y.suggestedMin = displayValue(20, '°C'); y.suggestedMax = displayValue(Math.max(100, zoneBounds[2] + 5), '°C');
+    y.suggestedMin = displayValue(30, '°C'); y.suggestedMax = displayValue(80, '°C');
     y.afterBuildTicks = scale => {
       const boundaries = zoneBounds.map(value => displayValue(value, '°C'));
       const spacing = (scale.max - scale.min) * 0.07;
@@ -258,7 +280,8 @@ function chartOptions(group, kind) {
             const p = item.raw;
             return [` ${p.y.toFixed(3)} kWh${p.partial ? ' · partial period' : ''}`, ` Average: ${p.avgWatts.toFixed(1)} W`, ` Coverage: ${(p.coverage * 100).toFixed(1)}%`];
           }
-          return ` ${item.dataset.label}: ${fmtValue(item.parsed.y, displayUnit(item.dataset.unit))}`;
+          const range = item.raw?.low != null && item.raw?.high != null ? ` · range ${fmtValue(item.raw.low, displayUnit(item.dataset.unit))}–${fmtValue(item.raw.high, displayUnit(item.dataset.unit))}` : '';
+          return ` ${item.dataset.label}: ${fmtValue(item.parsed.y, displayUnit(item.dataset.unit))}${range}`;
         },
       },
     } },
@@ -280,7 +303,7 @@ function buildChartBlocks() {
       const zone = document.createElement('div'); zone.className = `plot-zone plot-${kind}`;
       zone.innerHTML = `<div class="plot-heading"><h3>${kind === 'temperature' ? 'Temperatures' : kind === 'fans' ? 'Fans' : 'Power'}</h3><div class="chip-legend" id="chips-${group}-${kind}"></div></div><div class="chart-wrap"><canvas id="${id}" role="img" aria-label="${trends ? 'Long-term' : 'Real-time'} ${kind}"></canvas><div id="${id}-empty" class="chart-empty hidden">No readings in this period</div></div>`;
       container.appendChild(zone);
-      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [guideZones, sharedCursor] });
+      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [guideZones, sharedCursor, sensorRanges] });
       chart.$group = group;
       charts[id] = { chart, group, kind };
       if (kind === 'power') {
@@ -306,6 +329,7 @@ function datasetStyle(sensor, kind) {
 function updatePlot(group, kind, from, to, datasets) {
   const id = chartId(group, kind), entry = charts[id];
   entry.chart.options.scales.x.min = from; entry.chart.options.scales.x.max = to;
+  entry.rangeExtent = datasets.flatMap(dataset => dataset.data.flatMap(point => [point.low, point.high])).filter(Number.isFinite);
   $(`${id}-empty`).classList.toggle('hidden', datasets.some(dataset => dataset.data.some(point => point.y != null)));
   setChartDatasets(entry, datasets);
 }
@@ -327,7 +351,11 @@ async function refreshHistory() {
     for (const kind of ['temperature', 'fans']) {
       updatePlot('history', kind, from, to, groupSensors(kind).map(sensor => {
         const points = mergeLive(history.series[sensor] || [], live.series[sensor], from, to);
-        return { ...datasetStyle(sensor, kind), fill: false, pointRadius: points.length === 1 ? 3 : 0, data: points.map(point => ({ x: point.ts, y: point.value_c })) };
+        const bounds = {};
+        for (const bound of ['min', 'max']) bounds[bound] = new Map(mergeLive(history.series[`${sensor}_${bound}`] || [], live.series[`${sensor}_${bound}`], from, to).map(point => [point.ts, point.value_c]));
+        const data = points.map(point => ({ x: point.ts, y: point.value_c, low: bounds.min.get(point.ts), high: bounds.max.get(point.ts) }));
+        return { ...datasetStyle(sensor, kind), fill: false, pointRadius: points.length === 1 ? 3 : 0, data };
+
       }));
     }
     const points = [];
@@ -365,8 +393,11 @@ async function refreshTrends() {
       const datasets = [];
       for (const sensor of groupSensors(kind)) {
         const points = aggregate.series[sensor] || [];
+        const calendarKey = ts => new Date(ts).toLocaleDateString();
+        const lows = new Map((aggregate.series[`${sensor}_min`] || []).map(point => [calendarKey(point.ts), point.min]));
+        const highs = new Map((aggregate.series[`${sensor}_max`] || []).map(point => [calendarKey(point.ts), point.max]));
         for (const band of ['max', 'min', 'avg']) datasets.push({ ...datasetStyle(sensor, kind), band, label: band === 'avg' ? sensorLabel(sensor) : `${sensorLabel(sensor)} ${band}`,
-          data: points.map(point => ({ x: point.ts, y: point[band] })),
+          data: points.map(point => ({ x: point.ts, y: point[band], low: band === 'avg' ? lows.get(calendarKey(point.ts)) : null, high: band === 'avg' ? highs.get(calendarKey(point.ts)) : null })),
           borderColor: band === 'avg' ? sensorColor(sensor) : 'transparent', backgroundColor: hexA(sensorColor(sensor), 0.08),
           fill: band === 'min' ? '-1' : false, pointRadius: band === 'avg' && points.length === 1 ? 3 : 0,
         });
@@ -394,11 +425,14 @@ function renderCards(latest) {
     const el = document.createElement('div');
     el.className = 'card';
     el.style.borderTopColor = sensorColor(s);
+    const source = thermalStatus?.latest?.sources?.[s];
+    el.title = source ? `${source.method} · hottest: ${source.key || 'unavailable'} · ${source.count} mapped sensors read` : '';
     el.innerHTML =
       `<div class="sensor-name">${sensorLabel(s)}</div>` +
       (row
         ? `<div class="temp">${fmtValue(row.value_c, unit).replace(/ (RPM|°C|°F|%)$/, '<small> $1</small>')}</div>` +
           `<div class="updated">updated ${ago(row.ts)}</div>` +
+          (source?.min != null ? `<div class="sensor-range">Average · range ${fmtValue(source.min, '°C')}–${fmtValue(source.max, '°C')} · ${source.count} sensors</div>` : '') +
           `<div class="thermal-zone">${zoneText(row.value_c)}</div>` +
           `<div class="thermal-state">macOS: ${thermalStatus?.state?.label || 'Unavailable'}${thermalStatus?.state?.level === 3 ? ' · performance impacted' : thermalStatus?.state?.level === 2 ? ' · high thermal pressure' : ''}</div>`
         : `<div class="temp">&mdash;</div><div class="updated">no data yet</div>`);
@@ -450,6 +484,8 @@ async function refreshThermal() {
     const response = await fetch('/api/thermal', { cache: 'no-store' });
     if (!response.ok) throw new Error('Thermals unavailable');
     thermalStatus = await response.json();
+    const mapped = thermalStatus.latest?.sources;
+    $('temperature-source-note').textContent = mapped ? 'CPU/GPU: average of available mapped SMC sensors; whiskers show min–max. History recorded before v1.5.0 used broad PMU readings and is not directly comparable.' : '';
     if (thermalStatus.latest) {
       renderCards(Object.entries(thermalStatus.latest.readings).map(([sensor, value_c]) => ({ sensor, value_c, ts: thermalStatus.latest.ts })));
     }

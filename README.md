@@ -1,6 +1,6 @@
-# temp-logger
+# Mac Thermals
 
-Records your Mac Studio's CPU/GPU temperatures and fan speeds in SQLite,
+Records your Apple Silicon Mac's CPU/GPU temperatures and fan speeds in SQLite,
 with a local dashboard for history, min/max/average trends, and range statistics.
 
 ## Install and run
@@ -233,3 +233,29 @@ mode uses synthetic power and works without the helper on Linux.
 - `GET /api/power?from=...&to=...&bucket=day|week`: saved intervals and calendar
   energy totals, average watts, measured milliseconds, coverage, and partial flags.
 - `/status` and `/api/status` include power sensor availability.
+
+## Temperature sources (v1.5.0 correction)
+
+The native backend uses a bundled read-only SMC helper and chip-specific CPU/GPU
+key mappings for M1–M5, based on the [Stats sensor map](https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift).
+Only available mapped sensors participate; counts and sensor keys appear on the
+status page. They do not necessarily represent every physical core. Unsupported
+or missing mapped readings show unavailable; the app never substitutes PMU
+power-management sensors as CPU or GPU readings. Build helpers with
+`npm run build:desktop` before starting the real native backend.
+
+Versions through v1.4.0 used the npm dependency's ambiguous `PMU tdie` / `PMU tdev`
+summaries. Those older temperature readings are retained but **are not directly
+comparable** with corrected readings. Existing fan, workload, and power data are
+unaffected. The chart's normal temperature range is 30–80°C (86–176°F) and expands
+when measured temperatures are outside that range.
+
+The main temperature value is the **average of valid mapped sensors**, matching
+smctemp's averaging approach on the development M5 Ultra. The cards also show
+the sensor min–max range. Temperature plots draw min–max whiskers (spaced out
+at dense zoom levels); tooltips retain the range at every point. These are
+sensor spreads, not confidence intervals. Long-term whiskers show the measured
+sensor extremes in each daily bucket, alongside the existing temporal bands.
+Individual current sensor values are listed on the status page. Sensor bounds
+are stored as `cpu_min`, `cpu_max`, `gpu_min`, and `gpu_max` in Celsius; older
+samples without bounds do not get fabricated error bars.

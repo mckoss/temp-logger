@@ -4,13 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#0d1117" />
-<title>Mac Studio Temperature &amp; Fans</title>
+<title>Mac Thermals</title>
 <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="title">
-      <h1>Mac Studio <span class="accent">Thermals</span></h1>
+      <h1>Mac <span class="accent">Thermals</span></h1>
       <p class="subtitle"><span id="app-version"></span> &middot; temperature &amp; fan history &middot; <span id="sample-info">&mdash;</span></p>
     </div>
     <div class="header-controls">
@@ -50,6 +50,7 @@
     </section>
     <p id="workload-info" class="fine" role="status"></p>
     <section id="cards" class="cards" aria-live="polite"></section>
+    <p id="temperature-source-note" class="fine"></p>
     <details class="thermal-guides">
       <summary>Temperature guide zones · not Apple limits</summary>
       <p class="fine">These numbered zones are editable visual guides, not safe/unsafe or throttling boundaries. macOS thermal pressure is shown separately on the cards.</p>

@@ -25,3 +25,7 @@ Follow Mike's global AGENTS.md guidance. This repository adds:
   y-axis; keep plot edges/time bounds aligned and time ticks on the bottom only.
 - Power is an explicitly labeled PD0R input-rail estimate, not wall consumption.
   Integrate valid observations only; preserve coverage/gaps in energy totals.
+
+- CPU/GPU native temperatures must use chip-mapped SMC sensors, never broad
+  PMU tdie/tdev summaries. Main values are averages; retain sensor min/max in
+  Celsius for the smaller card range and chart whiskers. Expose source keys.
