@@ -120,7 +120,7 @@ function baseOptions(unit, tooltipTitle, tooltipLabel, tooltipFilter) {
         ticks: {
           color: '#8b949e',
           callback: (v) =>
-            unit === 'RPM' ? Math.round(v).toLocaleString() : v,
+            unit === 'RPM' ? Math.round(v).toLocaleString() : Number(v.toFixed(1)),
         },
         grid: { color: 'rgba(48,54,61,0.55)' },
         title: { display: true, text: unit, color: '#8b949e' },
@@ -237,7 +237,7 @@ async function refreshHistory() {
     entry.timestamps = allTs;
     const byTs = {};
     for (const s of g.sensors) {
-      byTs[s] = new Map(series[s].map((p) => [p.ts, p.value_c]));
+      byTs[s] = new Map((series[s] || []).map((p) => [p.ts, p.value_c]));
     }
     entry.chart.data.labels = allTs.map((ts) => tickLabel(ts, rangeMs, false));
     entry.chart.data.datasets = sensors.map((s) => {
@@ -252,7 +252,8 @@ async function refreshHistory() {
         fill: true,
         tension: 0.25,
         borderWidth: 2,
-        pointRadius: 0,
+        pointRadius: series[s].length === 1 ? 3 : 0,
+        pointBackgroundColor: color,
         pointHoverRadius: 4,
         spanGaps: true,
       };
@@ -277,7 +278,7 @@ async function refreshTrends() {
     const allTs = unionTimestamps(series, g.sensors, (p) => p.ts);
     entry.timestamps = allTs;
     const datasets = [];
-    for (const s of sensors) {
+    for (const s of g.sensors) {
       const color = sensorColor(s);
       const byTs = new Map((series[s] || []).map((p) => [p.ts, p]));
       const col = (k) => allTs.map((ts) => (byTs.has(ts) ? byTs.get(ts)[k] : null));
@@ -304,7 +305,8 @@ async function refreshTrends() {
           borderColor: color,
           borderWidth: 2,
           tension: 0.25,
-          pointRadius: 0,
+          pointRadius: (series[s] || []).length === 1 ? 3 : 0,
+          pointBackgroundColor: color,
           pointHoverRadius: 4,
           spanGaps: true,
         }
@@ -374,6 +376,7 @@ async function refreshStatus() {
   const res = await fetch('/api/status');
   const status = await res.json();
   updatePill(status);
+  $('app-version').textContent = `v${status.version}`;
   $('sample-info').textContent =
     status.backend === 'none'
       ? 'no backend'

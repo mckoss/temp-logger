@@ -5,7 +5,7 @@
   },
   "description": "Mac Studio temperature history logger — Node.js sampler, SQLite storage, web dashboard",
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.13.0"
   },
   "license": "MIT",
   "main": "server.js",
@@ -14,11 +14,25 @@
     "demo": "node server.js --demo",
     "start": "node server.js",
     "test": "node --test \"test/unit/**/*.test.js\"",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build": "node scripts/build.js",
+    "check": "npm run build && npm test && npm run test:e2e",
+    "test:install": "playwright install chromium",
+    "sensors:check": "node scripts/check-sensors.js"
   },
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "devDependencies": {
     "@playwright/test": "^1.49.1"
+  },
+  "optionalDependencies": {
+    "macos-temperature-sensor": "^2.1.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mckoss/temp-logger.git"
+  },
+  "allowScripts": {
+    "macos-temperature-sensor": true
   }
 }

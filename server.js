@@ -1,12 +1,14 @@
 // temp-logger server: samples Mac temperature/fan sensors into SQLite and
 // serves a Chart.js dashboard plus a small JSON API.
 //
-//   node server.js          # real sensors (needs `macthermal` or `smctemp`)
+//   node server.js          # real sensors (npm-managed native backend)
 //   node server.js --demo   # synthetic data, for preview/testing
 //
-// Config via env: PORT, INTERVAL_MS, DB_PATH, RETENTION_DAYS.
+// Config via env: HOST, PORT, INTERVAL_MS, DB_PATH, RETENTION_DAYS.
 
 import express from 'express';
+import { readFileSync } from 'node:fs';
+import { numberOption, timeRange } from './lib/config.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from './lib/db.js';
@@ -15,23 +17,25 @@ import { createLogger } from './lib/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const INTERVAL_MS = parseInt(process.env.INTERVAL_MS || '300000', 10); // 5 min
-const DB_PATH = process.env.DB_PATH || join(__dirname, 'data', 'temps.db');
-const RETENTION_DAYS = parseFloat(process.env.RETENTION_DAYS || '90');
+const { version } = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
 const DEMO = process.argv.includes('--demo');
+const HOST = process.env.HOST || '127.0.0.1';
+const PORT = numberOption(process.env.PORT, 'PORT', 3000, { min: 1, max: 65535 });
+const INTERVAL_MS = numberOption(process.env.INTERVAL_MS, 'INTERVAL_MS', DEMO ? 5000 : 300000, { min: 1, max: 2147483647 });
+const DB_PATH = process.env.DB_PATH || join(__dirname, 'data', DEMO ? 'demo.db' : 'temps.db');
+const RETENTION_DAYS = numberOption(process.env.RETENTION_DAYS, 'RETENTION_DAYS', 90, { min: 0.001, max: 36500, integer: false });
 
 const db = openDatabase(DB_PATH);
 const backend = await detectBackend({ demo: DEMO });
 const logger = createLogger({
   db,
   backend,
-  intervalMs: DEMO ? 5000 : INTERVAL_MS,
+  intervalMs: INTERVAL_MS,
 });
 logger.start();
 
 // Hourly purge of readings older than the retention window.
-setInterval(() => {
+const purgeTimer = setInterval(() => {
   try {
     const n = db.purgeOlderThan(Date.now() - RETENTION_DAYS * 86400000);
     if (n > 0) console.log(`[temp-logger] purged ${n} readings older than ${RETENTION_DAYS}d`);
@@ -43,6 +47,12 @@ setInterval(() => {
 const app = express();
 app.use(express.static(join(__dirname, 'public')));
 app.use('/vendor/chart.js', express.static(join(__dirname, 'node_modules', 'chart.js', 'dist')));
+
+function badRequest(fn) {
+  try { return fn(); } catch (err) { err.status = 400; throw err; }
+}
+const readRange = (query, duration) => badRequest(() => timeRange(query, duration));
+const queryNumber = (...args) => badRequest(() => numberOption(...args));
 
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res)).catch(next);
@@ -56,6 +66,7 @@ function sensorMeta() {
 app.get('/api/status', asyncHandler(async (req, res) => {
   res.json({
     ...logger.status(),
+    version,
     rows: db.rowCount(),
     retentionDays: RETENTION_DAYS,
     serverTime: Date.now(),
@@ -83,13 +94,12 @@ app.get('/api/current', asyncHandler(async (req, res) => {
 
 // ?from=&to= epoch ms, ?sensors=cpu,gpu,fan1, ?maxPoints=1200
 app.get('/api/history', asyncHandler(async (req, res) => {
-  const to = parseInt(req.query.to || String(Date.now()), 10);
-  const from = parseInt(req.query.from || String(to - 86400000), 10);
-  const maxPoints = Math.min(parseInt(req.query.maxPoints || '1200', 10) || 1200, 5000);
+  const { from, to } = readRange(req.query, 86400000);
+  const maxPoints = queryNumber(req.query.maxPoints, 'maxPoints', 1200, { min: 1, max: 5000 });
   const sensors = req.query.sensors
     ? String(req.query.sensors).split(',').filter(Boolean)
     : db.sensors();
-  const series = {};
+  const series = Object.create(null);
   for (const s of sensors) series[s] = db.history(s, from, to, maxPoints);
   res.json({ from, to, series });
 }));
@@ -97,13 +107,13 @@ app.get('/api/history', asyncHandler(async (req, res) => {
 // Bucketed min/max/avg per sensor for the long-term trends view.
 // ?from=&to= epoch ms, ?sensors=..., ?bucket=hour|day|auto
 app.get('/api/aggregate', asyncHandler(async (req, res) => {
-  const to = parseInt(req.query.to || String(Date.now()), 10);
-  const from = parseInt(req.query.from || String(to - 30 * 86400000), 10);
-  const bucket = ['hour', 'day'].includes(req.query.bucket) ? req.query.bucket : 'auto';
+  const { from, to } = readRange(req.query, 30 * 86400000);
+  const bucket = req.query.bucket ?? 'auto';
+  if (!['hour', 'day', 'auto'].includes(bucket)) return res.status(400).json({ error: 'bucket must be hour, day, or auto' });
   const sensors = req.query.sensors
     ? String(req.query.sensors).split(',').filter(Boolean)
     : db.sensors();
-  const series = {};
+  const series = Object.create(null);
   let resolvedBucket = bucket === 'auto'
     ? (to - from <= 48 * 3600 * 1000 ? 'hour' : 'day')
     : bucket;
@@ -116,9 +126,8 @@ app.get('/api/aggregate', asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/stats', asyncHandler(async (req, res) => {
-  const to = parseInt(req.query.to || String(Date.now()), 10);
-  const from = parseInt(req.query.from || String(to - 86400000), 10);
-  const stats = {};
+  const { from, to } = readRange(req.query, 86400000);
+  const stats = Object.create(null);
   for (const s of db.sensors()) stats[s] = db.stats(s, from, to);
   res.json({ from, to, stats });
 }));
@@ -127,18 +136,22 @@ app.get('/api/stats', asyncHandler(async (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[temp-logger]', err);
-  res.status(500).json({ error: err.message || 'internal error' });
+  if (err.status !== 400) console.error('[temp-logger]', err);
+  res.status(err.status || 500).json({ error: err.status === 400 ? err.message : 'internal error' });
 });
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`[temp-logger] backend : ${backend.name}`);
-  console.log(`[temp-logger] dashboard: http://localhost:${PORT}`);
+  console.log(`[temp-logger] dashboard: http://${HOST}:${PORT}`);
   if (backend.hint) console.log(`[temp-logger] setup   : ${backend.hint}`);
 });
 
-function shutdown() {
-  logger.stop();
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  clearInterval(purgeTimer);
+  await logger.stop();
   server.close(() => {
     db.close();
     process.exit(0);

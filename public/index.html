@@ -11,7 +11,7 @@
   <header class="topbar">
     <div class="title">
       <h1>Mac Studio <span class="accent">Thermals</span></h1>
-      <p class="subtitle">temperature &amp; fan history &middot; <span id="sample-info">&mdash;</span></p>
+      <p class="subtitle"><span id="app-version"></span> &middot; temperature &amp; fan history &middot; <span id="sample-info">&mdash;</span></p>
     </div>
     <div id="status-pill" class="pill unknown" role="status">
       <span class="dot"></span><span id="status-text">Connecting&hellip;</span>
@@ -21,9 +21,9 @@
   <div id="setup-banner" class="banner hidden">
     <div class="banner-body">
       <strong>No sensors detected.</strong>
-      <p>Install the SMC sensor reader with Homebrew for temperatures <em>and</em> fan speeds, then restart the server:</p>
-      <code id="install-cmd">brew install guillerDev/tap/macthermal</code>
-      <p class="fine">Temperatures only? <code>brew tap narugit/tap &amp;&amp; brew install narugit/tap/smctemp</code> also works.</p>
+      <p>Real readings require an Apple Silicon Mac. Install the npm sensor dependency, then restart the server:</p>
+      <code id="install-cmd">npm ci --include=optional</code>
+      <p class="fine">If compilation fails, install Apple Command Line Tools (<code>xcode-select --install</code>) and Python 3, then retry. For a preview on any platform, run <code>npm run demo</code>.</p>
     </div>
     <button id="copy-btn" class="btn">Copy command</button>
   </div>
@@ -49,12 +49,12 @@
 
     <section class="panel">
       <div class="panel-head"><h2>Range statistics</h2></div>
-      <table class="stats" id="stats-table">
+      <div class="table-scroll"><table class="stats" id="stats-table">
         <thead>
           <tr><th>Sensor</th><th>Current</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr>
         </thead>
         <tbody></tbody>
-      </table>
+      </table></div>
     </section>
   </main>
 

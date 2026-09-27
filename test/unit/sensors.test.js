@@ -7,9 +7,12 @@ import { join } from 'node:path';
 import {
   parseTemp,
   parseMacthermalReport,
-  detectBackend,
+  detectBackend as detectBackendWithNative,
+  sampleNativeSensors,
   INSTALL_HINT,
 } from '../../lib/sensors.js';
+
+const detectBackend = (options = {}) => detectBackendWithNative({ nativeLoader: async () => null, ...options });
 
 describe('parseTemp', () => {
   it('parses a plain float', () => {
@@ -157,5 +160,34 @@ echo '${MACTHERMAL_JSON}'
     assert.equal(b.name, 'none');
     assert.equal(b.hint, INSTALL_HINT);
     await assert.rejects(b.sample, /no sensor backend/);
+  });
+});
+
+
+describe('native sensors', () => {
+  const native = {
+    temperature: () => ({ cpu: 61.234, gpu: 48.76 }),
+    fans: () => [{ rpm: 2000.7 }, { rpm: 0 }],
+  };
+  it('prefers the npm backend and reports temperatures and stopped fans', async () => {
+    const backend = await detectBackend({ nativeLoader: async () => native });
+    assert.equal(backend.name, 'native');
+    const sample = await backend.sample();
+    assert.deepEqual(sample.readings, { cpu: 61.2, gpu: 48.8, fan1: 2001, fan2: 0 });
+    assert.deepEqual(sample.meta.fan2, { unit: 'RPM', label: 'Fan 2' });
+  });
+  it('ignores unavailable temperatures and invalid fan speeds', () => {
+    const result = sampleNativeSensors({
+      temperature: () => ({ cpu: null, gpu: -1 }),
+      fans: () => [{ rpm: NaN }, { rpm: -1 }, { rpm: 1500 }],
+    });
+    assert.deepEqual(result.readings, { fan3: 1500 });
+  });
+  it('rejects an entirely empty sample', () => {
+    assert.throws(() => sampleNativeSensors({ temperature: () => ({}), fans: () => [] }), /no usable/);
+  });
+  it('demo mode never attempts to load native code', async () => {
+    const backend = await detectBackend({ demo: true, nativeLoader: () => { throw new Error('must not load'); } });
+    assert.equal(backend.name, 'demo');
   });
 });

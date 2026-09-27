@@ -42,7 +42,7 @@ describe('logger', () => {
     const logger = createLogger({ db, backend, intervalMs: 30 });
     logger.start();
     await sleep(160);
-    logger.stop();
+    await logger.stop();
 
     const latest = db.latest();
     assert.equal(latest.length, 2);
@@ -67,7 +67,7 @@ describe('logger', () => {
     const logger = createLogger({ db, backend, intervalMs: 30 });
     logger.start();
     await sleep(120);
-    logger.stop();
+    await logger.stop();
 
     const status = logger.status();
     assert.equal(status.ok, false);
@@ -87,11 +87,52 @@ describe('logger', () => {
     const logger = createLogger({ db, backend, intervalMs: 30 });
     logger.start();
     await sleep(200);
-    logger.stop();
+    await logger.stop();
 
     const status = logger.status();
     assert.equal(status.ok, true);
     assert.equal(status.consecutiveFailures, 0);
     assert.ok(status.totalSamples >= 1);
   });
+});
+
+
+it('serializes slow samples and stop waits before closing the database', async () => {
+  let release;
+  const sample = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  const writes = [];
+  const logger = createLogger({
+    db: { insert: (...args) => writes.push(args) },
+    backend: fakeBackend(async () => { calls++; return sample; }),
+    intervalMs: 5,
+  });
+  logger.start();
+  logger.start();
+  assert.equal(logger.status().ok, false);
+  await sleep(30);
+  assert.equal(calls, 1);
+  let stopped = false;
+  const stop = logger.stop().then(() => { stopped = true; });
+  await sleep(10);
+  assert.equal(stopped, false);
+  release({ readings: { cpu: 55 }, meta: {} });
+  await stop;
+  assert.equal(writes.length, 1);
+  await sleep(20);
+  assert.equal(calls, 1);
+});
+
+it('rejects invalid samples before storing any readings', async () => {
+  const writes = [];
+  const logger = createLogger({
+    db: { insert: (...args) => writes.push(args) },
+    backend: fakeBackend(async () => ({ readings: { cpu: 50, gpu: NaN } })),
+    intervalMs: 1000,
+  });
+  logger.start();
+  await logger.stop();
+  assert.equal(writes.length, 0);
+  assert.equal(logger.status().ok, false);
+  assert.match(logger.status().lastError, /invalid values/);
 });
