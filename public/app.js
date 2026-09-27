@@ -190,6 +190,17 @@ function zoneText(value) {
   return `Temp Zone ${zone + 1} · ${label}`;
 }
 
+// A display transition can reset the canvas context while leaving its dimensions
+// and Chart.js's cached DPR intact. resize() then skips retinaScale, so repair
+// the transform before every draw, including data refreshes and hover redraws.
+const canvasScale = {
+  id: 'canvasScale',
+  beforeDraw(chart) {
+    const ratio = chart.currentDevicePixelRatio || 1;
+    chart.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  },
+};
+
 const temperatureZones = {
   id: 'temperatureZones',
   beforeDraw(chart) {
@@ -319,7 +330,7 @@ function buildChartBlocks() {
         zone.querySelector('.plot-heading').after(note);
       }
       container.appendChild(zone);
-      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [temperatureZones, sharedCursor, sensorRanges] });
+      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [canvasScale, temperatureZones, sharedCursor, sensorRanges] });
       chart.$group = group;
       charts[id] = { chart, group, kind };
       if (kind === 'power') {
