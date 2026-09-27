@@ -37,7 +37,7 @@ These are possible follow-ups, not changes promised or approved for this session
 
 ## Verification notes
 
-- Local checks comprise 56 unit and 34 browser tests plus native compilation.
+- Local checks comprise 56 unit and 35 browser tests plus native compilation.
 - Slow CI runners exposed chart-initialization races in browser assertions.
   Wait for each chart's data before checking it; do not mask failures with retries.
 - Real-time buffers are memory-only and reset at restart. Existing saved history

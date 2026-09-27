@@ -1,11 +1,12 @@
 import Cocoa
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var webView: WKWebView!
     var message: NSTextField!
     var retry: Timer?
+    var displayRefresh: Timer?
     var floatingItem: NSMenuItem!
     let dashboard = URL(string: Bundle.main.object(forInfoDictionaryKey: "TempLoggerURL") as! String)!
 
@@ -38,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         NSApp.windowsMenu = windowMenu
 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 780), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.delegate = self
         window.title = "Temp Logger"
         window.minSize = NSSize(width: 390, height: 450)
         window.center()
@@ -58,6 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         loadDashboard()
+    }
+
+    // Moving between displays can change WKWebView's backing scale without resizing its CSS viewport.
+    func windowDidChangeScreen(_ notification: Notification) { refreshDisplay() }
+    func windowDidChangeBackingProperties(_ notification: Notification) { refreshDisplay() }
+    func refreshDisplay() {
+        displayRefresh?.invalidate()
+        displayRefresh = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+            self?.webView?.evaluateJavaScript("window.dispatchEvent(new Event('mac-thermals-display-change'))", completionHandler: nil)
+        }
     }
 
     @objc func toggleFloating() {

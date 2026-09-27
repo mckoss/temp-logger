@@ -156,7 +156,8 @@ npm run service:uninstall # Stop/remove login agents; preserve app, data, logs
 The app is installed at `~/Applications/Temp Logger.app`. Drag it into the Dock
 or choose Options → Keep in Dock. The window uses Apple's WKWebView and has no
 browser toolbar. Window → Always on Top (Shift-Command-T) toggles floating and
-remembers the setting. Closing the window leaves the logger running; opening
+remembers the setting. Moving between displays refreshes chart sizes and backing
+resolution without reloading the page or resetting chart selections. Closing the window leaves the logger running; opening
 the Dock app brings the dashboard back.
 
 Two per-user launchd agents start at login: `com.mckoss.temp-logger` supervises
