@@ -1,6 +1,7 @@
 // Dashboard: live sensor cards, combined history charts, long-term
 // min/max/avg trend bands, and range statistics.
 
+const ZONE_COLORS = ['#32d74b', '#ffdd00', '#ff9500', '#ff453a'];
 const PALETTE = ['#ffb020', '#ff5d5d', '#4dd0e1', '#9ccc65', '#ba68c8', '#f48fb1', '#4db6ac', '#90a4ff'];
 const SENSOR_ORDER = ['cpu', 'gpu', 'fan1', 'fan2', 'fan3', 'fan4', 'cpu_load', 'cpu_peak', 'gpu_load', 'gpu_peak'];
 const RANGES = [
@@ -87,7 +88,7 @@ function renderChartUnits(entry) {
     entry.chart.setDatasetVisibility(index, visibility.get(dataset.label) ?? true);
   });
   if (entry.chart.options.scales.temperature) {
-    entry.chart.options.scales.temperature.title.text = `Temperature (${temperatureUnit}) · guide zones`;
+    entry.chart.options.scales.temperature.title.text = `Temperature (${temperatureUnit}) · Temp Zones`;
     entry.chart.options.scales.temperature.suggestedMin = displayValue(Math.min(30, ...(entry.rangeExtent || [])), '°C');
     entry.chart.options.scales.temperature.suggestedMax = displayValue(Math.max(80, ...(entry.rangeExtent || [])), '°C');
   }
@@ -156,7 +157,8 @@ function updateZoneInputs() {
   zoneBounds.forEach((value, index) => { $(`zone-${index + 1}`).value = Number(displayValue(value, '°C').toFixed(1)); });
   $('zone-unit').textContent = temperatureUnit;
   const [a, b, c] = zoneBounds.map(value => fmtValue(value, '°C'));
-  $('zone-legend').textContent = `Zone 1: below ${a} · Zone 2: ${a} to below ${b} · Zone 3: ${b} to below ${c} · Zone 4: ${c} and above`;
+  const ranges = [`below ${a}`, `${a} to below ${b}`, `${b} to below ${c}`, `${c} and above`];
+  $('zone-legend').innerHTML = ranges.map((range, i) => `<span><i class="zone-swatch" style="background:${ZONE_COLORS[i]}"></i>Zone ${i + 1}: ${range}</span>`).join('');
 }
 updateZoneInputs();
 $('zone-form').addEventListener('submit', event => {
@@ -172,33 +174,36 @@ $('zone-form').addEventListener('submit', event => {
   zoneBounds = values;
   updateZoneInputs();
   try { localStorage.setItem('temp-logger.zone-bounds', JSON.stringify(values)); } catch {}
-  $('zone-error').textContent = 'Display guides saved. These are not Apple temperature limits.';
+  $('zone-error').textContent = 'Temperature Zones saved.';
   renderCards(currentReadings);
   Object.values(charts).forEach(entry => { if (entry.sourceDatasets) renderChartUnits(entry); });
 });
 
-function zoneText(value) {
+function temperatureZone(value) {
   const index = zoneBounds.findIndex(bound => value < bound);
-  const zone = index < 0 ? 3 : index;
-  const label = zone === 0 ? `< ${fmtValue(zoneBounds[0], '°C')}` : zone === 3 ? `≥ ${fmtValue(zoneBounds[2], '°C')}` : `${displayValue(zoneBounds[zone - 1], '°C').toFixed(0)}–${fmtValue(zoneBounds[zone], '°C')}`;
-  return `Guide zone ${zone + 1} · ${label}`;
+  return index < 0 ? 3 : index;
 }
 
-const guideZones = {
-  id: 'temperatureGuideZones',
+function zoneText(value) {
+  const zone = temperatureZone(value);
+  const label = zone === 0 ? `< ${fmtValue(zoneBounds[0], '°C')}` : zone === 3 ? `≥ ${fmtValue(zoneBounds[2], '°C')}` : `${displayValue(zoneBounds[zone - 1], '°C').toFixed(0)}–${fmtValue(zoneBounds[zone], '°C')}`;
+  return `Temp Zone ${zone + 1} · ${label}`;
+}
+
+const temperatureZones = {
+  id: 'temperatureZones',
   beforeDraw(chart) {
     const axis = chart.scales.temperature;
     if (!axis || !chart.chartArea) return;
     const { left, right, top, bottom } = chart.chartArea;
     const limits = [axis.min, ...zoneBounds.map(value => displayValue(value, '°C')), axis.max];
-    const colors = ['#32d74b', '#ffdd00', '#ff9500', '#ff453a'];
     const ctx = chart.ctx;
     ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
     for (let i = 0; i < 4; i++) {
       const low = Math.max(axis.min, limits[i]), high = Math.min(axis.max, limits[i + 1]);
       if (low >= high) continue;
       const yTop = axis.getPixelForValue(high), yBottom = axis.getPixelForValue(low);
-      ctx.fillStyle = colors[i];
+      ctx.fillStyle = ZONE_COLORS[i];
       ctx.globalAlpha = 0.2; ctx.fillRect(left, yTop, right - left, yBottom - yTop);
       ctx.globalAlpha = 1; ctx.fillRect(left, yTop, 8, yBottom - yTop);
       ctx.fillStyle = '#f0f6fc'; ctx.font = 'bold 10px -apple-system, sans-serif';
@@ -256,7 +261,7 @@ function chartOptions(group, kind) {
     type: 'linear', position: 'left', afterFit: scale => { scale.width = 92; },
     ticks: { color: '#8b949e', maxTicksLimit: kind === 'temperature' ? 7 : 4, callback: value => kind === 'power' && trends ? value.toLocaleString(undefined, { maximumSignificantDigits: 3 }) : Number(value.toFixed(2)).toLocaleString() },
     grid: { color: 'rgba(48,54,61,0.55)' },
-    title: { display: true, color: '#8b949e', text: kind === 'temperature' ? `Temperature (${temperatureUnit}) · guide zones` : kind === 'utilization' ? 'Utilization (%)' : kind === 'fans' ? 'Fans (RPM)' : trends ? 'Energy (kWh)' : 'Power (W)' },
+    title: { display: true, color: '#8b949e', text: kind === 'temperature' ? `Temperature (${temperatureUnit}) · Temp Zones` : kind === 'utilization' ? 'Utilization (%)' : kind === 'fans' ? 'Fans (RPM)' : trends ? 'Energy (kWh)' : 'Power (W)' },
   };
   if (kind === 'temperature') {
     y.suggestedMin = displayValue(30, '°C'); y.suggestedMax = displayValue(80, '°C');
@@ -314,7 +319,7 @@ function buildChartBlocks() {
         zone.querySelector('.plot-heading').after(note);
       }
       container.appendChild(zone);
-      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [guideZones, sharedCursor, sensorRanges] });
+      const chart = new Chart($(id).getContext('2d'), { type: kind === 'power' && trends ? 'bar' : 'line', data: { datasets: [] }, options: chartOptions(group, kind), plugins: [temperatureZones, sharedCursor, sensorRanges] });
       chart.$group = group;
       charts[id] = { chart, group, kind };
       if (kind === 'power') {
@@ -435,7 +440,12 @@ function renderCards(latest) {
     const unit = sensorUnit(s);
     const el = document.createElement('div');
     el.className = 'card';
-    el.style.borderTopColor = sensorColor(s);
+    if (row && Number.isFinite(row.value_c)) {
+      const color = ZONE_COLORS[temperatureZone(row.value_c)];
+      el.style.borderTopColor = color;
+      el.style.backgroundColor = hexA(color, 0.2);
+      el.style.setProperty('--zone-color', color);
+    }
     const source = thermalStatus?.latest?.sources?.[s];
     el.title = source ? `${source.method} · hottest: ${source.key || 'unavailable'} · ${source.count} mapped sensors read` : '';
     el.innerHTML =

@@ -49,7 +49,7 @@ test('unit toggle converts every temperature display, preserves RPM, and persist
   await expect(page.getByRole('button', { name: 'Fahrenheit', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
   await expect(page.locator('#stats-table tbody tr').first().locator('td')).toHaveText(['CPU', '68.0 °F', '50.0 °F', '86.0 °F', '68.0 °F', '3']);
-  expect(await chartState(page)).toEqual({ history: [68], trend: [86, 50, 68], axis: 'Temperature (°F) · guide zones', trendAxis: 'Temperature (°F) · guide zones', tooltip: ' CPU: 68.0 °F', fan: [2000], fanAxis: 'Fans (RPM)', hidden: true });
+  expect(await chartState(page)).toEqual({ history: [68], trend: [86, 50, 68], axis: 'Temperature (°F) · Temp Zones', trendAxis: 'Temperature (°F) · Temp Zones', tooltip: ' CPU: 68.0 °F', fan: [2000], fanAxis: 'Fans (RPM)', hidden: true });
   await expect(page.locator('#stats-table tbody tr').nth(2)).toContainText('2,000 RPM');
 
   // Subsequent API refreshes still arrive in Celsius and display correctly.

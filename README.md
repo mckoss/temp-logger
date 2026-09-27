@@ -197,7 +197,7 @@ and [Mac Studio handling guidance](https://support.apple.com/en-ie/guide/mac-stu
 
 Numbered chart/card zones are **app-defined visual guides**, not Apple limits or
 recommended safe temperatures. Defaults are below 60°C, 60–80°C, 80–95°C, and
-95°C or above. Edit the three boundaries in “Temperature guide zones”; choices
+95°C or above. Edit the three boundaries in “Temperature Zones”; choices
 are stored in this browser. Boundaries and axis labels convert with °C/°F.
 Use macOS pressure to assess reported thermal stress rather than inferring a
 throttle event from a guide-zone number. Historical chart bands are guides,
