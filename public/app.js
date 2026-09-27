@@ -191,16 +191,18 @@ const guideZones = {
     if (!axis || !chart.chartArea) return;
     const { left, right, top, bottom } = chart.chartArea;
     const limits = [axis.min, ...zoneBounds.map(value => displayValue(value, '°C')), axis.max];
-    const colors = ['rgba(77,208,225,0.025)', 'rgba(156,204,101,0.035)', 'rgba(255,176,32,0.06)', 'rgba(255,93,93,0.08)'];
+    const colors = ['#32d74b', '#ffdd00', '#ff9500', '#ff453a'];
     const ctx = chart.ctx;
     ctx.save(); ctx.beginPath(); ctx.rect(left, top, right - left, bottom - top); ctx.clip();
     for (let i = 0; i < 4; i++) {
       const low = Math.max(axis.min, limits[i]), high = Math.min(axis.max, limits[i + 1]);
       if (low >= high) continue;
       const yTop = axis.getPixelForValue(high), yBottom = axis.getPixelForValue(low);
-      ctx.fillStyle = colors[i]; ctx.fillRect(left, yTop, right - left, yBottom - yTop);
-      ctx.fillStyle = '#8b949e'; ctx.font = '10px -apple-system, sans-serif';
-      ctx.fillText(`Z${i + 1}`, left + 5, Math.min(yBottom - 3, yTop + 12));
+      ctx.fillStyle = colors[i];
+      ctx.globalAlpha = 0.2; ctx.fillRect(left, yTop, right - left, yBottom - yTop);
+      ctx.globalAlpha = 1; ctx.fillRect(left, yTop, 8, yBottom - yTop);
+      ctx.fillStyle = '#f0f6fc'; ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.fillText(`Z${i + 1}`, left + 13, Math.min(yBottom - 3, yTop + 12));
     }
     ctx.restore();
   },

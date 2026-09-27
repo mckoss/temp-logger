@@ -60,6 +60,7 @@ test('utilization history preserves live fluctuations, missing data, percent uni
     const c = Chart.getChart(`${group}-utilization`);
     return { min: c.scales.utilization.min, max: c.scales.utilization.max, values: c.data.datasets.map(d => d.data.map(p => p.y)) };
   }));
+  await expect.poll(async () => (await inspect())[1].values).toEqual([[90], [5], [40], [60], [0], [20]]);
   const before = await inspect();
   expect(before.every(c => c.min === 0 && c.max === 100)).toBe(true);
   expect(before[1].values).toEqual([[90], [5], [40], [60], [0], [20]]);
