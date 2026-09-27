@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0d1117" />
+<title>Mac Studio Temperature &amp; Fans</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1>Mac Studio <span class="accent">Thermals</span></h1>
+      <p class="subtitle">temperature &amp; fan history &middot; <span id="sample-info">&mdash;</span></p>
+    </div>
+    <div id="status-pill" class="pill unknown" role="status">
+      <span class="dot"></span><span id="status-text">Connecting&hellip;</span>
+    </div>
+  </header>
+
+  <div id="setup-banner" class="banner hidden">
+    <div class="banner-body">
+      <strong>No sensors detected.</strong>
+      <p>Install the SMC sensor reader with Homebrew for temperatures <em>and</em> fan speeds, then restart the server:</p>
+      <code id="install-cmd">brew install guillerDev/tap/macthermal</code>
+      <p class="fine">Temperatures only? <code>brew tap narugit/tap &amp;&amp; brew install narugit/tap/smctemp</code> also works.</p>
+    </div>
+    <button id="copy-btn" class="btn">Copy command</button>
+  </div>
+
+  <main>
+    <section id="cards" class="cards" aria-live="polite"></section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>History</h2>
+        <div class="ranges" id="ranges" role="group" aria-label="Time range"></div>
+      </div>
+      <div id="history-charts"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Long-term trends <span class="h2-sub">min / max band &amp; average</span></h2>
+        <div class="ranges" id="trend-ranges" role="group" aria-label="Trend range"></div>
+      </div>
+      <div id="trend-charts"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Range statistics</h2></div>
+      <table class="stats" id="stats-table">
+        <thead>
+          <tr><th>Sensor</th><th>Current</th><th>Min</th><th>Max</th><th>Avg</th><th>Samples</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <span>temp-logger</span><span aria-hidden="true">&middot;</span>
+    <span>readings stored in SQLite</span><span aria-hidden="true">&middot;</span>
+    <span id="footer-meta">&mdash;</span>
+  </footer>
+
+  <script src="/vendor/chart.js/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "dependencies": {
+    "chart.js": "^4.4.7",
+    "express": "^5.1.0"
+  },
+  "description": "Mac Studio temperature history logger — Node.js sampler, SQLite storage, web dashboard",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "MIT",
+  "main": "server.js",
+  "name": "temp-logger",
+  "scripts": {
+    "demo": "node server.js --demo",
+    "start": "node server.js",
+    "test": "node --test \"test/unit/**/*.test.js\"",
+    "test:e2e": "playwright test"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}
