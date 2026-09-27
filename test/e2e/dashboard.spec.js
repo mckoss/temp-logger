@@ -265,3 +265,22 @@ test('display-scale changes repair chart sizes without losing series visibility'
     expect(await page.evaluate(() => Chart.getChart('history-chart').isDatasetVisible(0))).toBe(false);
   }
 });
+
+test('redraw restores a lost Retina canvas transform even when dimensions have not changed', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 }));
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-utilization')?.data.datasets.length)).toBe(6);
+  const scales = await page.evaluate(() => Object.values(Chart.instances).map(chart => {
+    const width = chart.canvas.width, height = chart.canvas.height;
+    // Model a canvas context reset during a display transition: dimensions and
+    // Chart.js's cached DPR remain correct, but its drawing transform is lost.
+    chart.ctx.resetTransform();
+    chart.resize();
+    chart.update('none');
+    const matrix = chart.ctx.getTransform();
+    return { x: matrix.a, y: matrix.d, ratio: chart.currentDevicePixelRatio,
+      sameSize: width === chart.canvas.width && height === chart.canvas.height };
+  }));
+  expect(scales).toHaveLength(8);
+  for (const scale of scales) expect(scale).toEqual({ x: 2, y: 2, ratio: 2, sameSize: true });
+});
