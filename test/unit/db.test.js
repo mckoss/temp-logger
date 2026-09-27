@@ -161,3 +161,23 @@ describe('db', () => {
     assert.deepEqual(points, []);
   });
 });
+
+it('reports exactly 30 local calendar days, including zero days and unique sampling cycles', () => {
+  const db = openDatabase(':memory:');
+  try {
+    const now = new Date(2026, 8, 27, 12).getTime();
+    const start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 29);
+    db.insert(start.getTime() - 1, 'cpu', 10); // outside window
+    db.insert(start.getTime(), 'cpu', 20);
+    db.insert(start.getTime(), 'gpu', 30); // same cycle, second datapoint
+    db.insert(now - 1, 'cpu', 40);
+    db.insert(now, 'cpu', 50);
+    db.insert(now + 1, 'cpu', 60); // future excluded
+    const days = db.dailyCounts(now);
+    assert.equal(days.length, 30);
+    assert.equal(new Set(days.map(day => day.day)).size, 30);
+    assert.deepEqual(days[0], { day: '2026-08-29', datapoints: 2, samples: 1 });
+    assert.deepEqual(days[1], { day: '2026-08-30', datapoints: 0, samples: 0 });
+    assert.deepEqual(days.at(-1), { day: '2026-09-27', datapoints: 2, samples: 2 });
+  } finally { db.close(); }
+});

@@ -13,8 +13,15 @@
       <h1>Mac Studio <span class="accent">Thermals</span></h1>
       <p class="subtitle"><span id="app-version"></span> &middot; temperature &amp; fan history &middot; <span id="sample-info">&mdash;</span></p>
     </div>
-    <div id="status-pill" class="pill unknown" role="status">
-      <span class="dot"></span><span id="status-text">Connecting&hellip;</span>
+    <div class="header-controls">
+      <a class="btn nav-link" href="/status">Status</a>
+      <div id="temperature-units" class="ranges" role="group" aria-label="Temperature unit">
+        <button type="button" data-unit="°C" class="active" aria-pressed="true" aria-label="Celsius">°C</button>
+        <button type="button" data-unit="°F" aria-pressed="false" aria-label="Fahrenheit">°F</button>
+      </div>
+      <div id="status-pill" class="pill unknown" role="status">
+        <span class="dot"></span><span id="status-text">Connecting&hellip;</span>
+      </div>
     </div>
   </header>
 
@@ -29,6 +36,19 @@
   </div>
 
   <main>
+    <section class="workload-live" aria-label="Live workload">
+      <div class="workload-gauge">
+        <div class="workload-heading"><h2>CPU</h2><span id="cpu-live-value">—</span></div>
+        <meter id="cpu-live-meter" min="0" max="100" value="0" aria-label="CPU percent of maximum workload" hidden></meter>
+        <span class="fine">% of total CPU capacity</span>
+      </div>
+      <div class="workload-gauge">
+        <div class="workload-heading"><h2>GPU</h2><span id="gpu-live-value">—</span></div>
+        <meter id="gpu-live-meter" min="0" max="100" value="0" aria-label="GPU percent of maximum workload" hidden></meter>
+        <span class="fine">% of maximum GPU workload</span>
+      </div>
+    </section>
+    <p id="workload-info" class="fine" role="status"></p>
     <section id="cards" class="cards" aria-live="polite"></section>
 
     <section class="panel">

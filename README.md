@@ -14,7 +14,7 @@ for npm's native addon compilation. Install the tools once if needed with
 npm ci
 npm run sensors:check
 npm start
-# Open http://127.0.0.1:3000
+# Open http://127.0.0.1:49173
 ```
 
 All application and test dependencies are declared in `package.json`, locked
@@ -45,7 +45,9 @@ instructions; real mode never silently substitutes demo data.
 
 ## Dashboard
 
-- Current CPU/GPU temperatures (°C) and per-fan speed (RPM).
+- Current CPU/GPU temperatures and per-fan speed (RPM).
+- Header °C/°F toggle updates all temperature displays and remembers your choice
+  in this browser. Stored readings and API values always remain in Celsius.
 - Separate temperature and fan history charts over 1H–30D.
 - Hourly/daily min/max bands and average lines over 7D–90D.
 - Current/min/max/average/sample count per sensor.
@@ -56,7 +58,7 @@ instructions; real mode never silently substitutes demo data.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | Bind address; set `0.0.0.0` to expose on your network |
-| `PORT` | `3000` | HTTP port (1–65535) |
+| `PORT` | `49173` | HTTP port (1–65535) |
 | `INTERVAL_MS` | `300000` (demo: `5000`) | Sample interval in milliseconds |
 | `DB_PATH` | `data/temps.db` (demo: `data/demo.db`) | SQLite path; `:memory:` for disposable runs |
 | `RETENTION_DAYS` | `90` | Retention window, purged hourly |
@@ -104,3 +106,65 @@ sampling, and `lib/db.js` handles SQLite storage, retention, and queries.
 Databases and test output are gitignored. At the default five-minute interval,
 each sensor records about 288 rows/day. Stop the server before backing up or
 removing a database and its associated WAL files.
+
+
+## Live workload and history
+
+The top row shows live CPU and GPU utilization, sampled and refreshed about once
+per second. CPU is busy time across all cores divided by total available CPU
+time: one busy core on a 30-core Mac is 3.3%; all cores busy is 100%. This weights
+cores equally rather than estimating throughput from core type or clock speed.
+GPU utilization comes from macOS's built-in `ioreg` Device Utilization counter.
+No additional package or sudo is required. Missing GPU readings show unavailable,
+not zero. Short bursts between polls can still be missed.
+
+Only summaries are saved with each thermal sample (five minutes by default):
+`cpu_load` / `gpu_load` are averages, and `cpu_peak` / `gpu_peak` are sampled peaks.
+All four use `%` metadata and have their own 0–100% charts. CPU averages are
+weighted by observed CPU time; GPU averages are the mean of valid observations.
+The first summary appears after the first storage interval. Live observations
+remain in memory and do not create extra SQLite rows. Shutdown or a crash may
+lose the unfinished interval. The Fahrenheit toggle does not change percentages,
+RPM, stored temperatures, or API temperature values.
+
+`GET /api/workload` provides live workload, core count, timestamp, and errors.
+The Status page (`/status`) confirms the server process is reachable, shows PID,
+uptime, last saved sample, and errors. `GET /api/activity` returns the last 30
+local calendar days, including today and zero-filled days, with sampling-cycle
+and sensor-datapoint counts. Counts reflect retained data; today is partial.
+
+## Native window and automatic startup (macOS)
+
+```sh
+npm run service:install   # Build native app, install login agents, start both
+npm run service:status   # Inspect the supervised logger
+npm run app              # Open/reopen the native window
+npm run service:uninstall # Stop/remove login agents; preserve app, data, logs
+```
+
+The app is installed at `~/Applications/Temp Logger.app`. Drag it into the Dock
+or choose Options → Keep in Dock. The window uses Apple's WKWebView and has no
+browser toolbar. Window → Always on Top (Shift-Command-T) toggles floating and
+remembers the setting. Closing the window leaves the logger running; opening
+the Dock app brings the dashboard back.
+
+Two per-user launchd agents start at login: `com.mckoss.temp-logger` supervises
+the Node logger/web server, and `com.mckoss.temp-logger.window` opens the native
+window. The logger restarts after an exit or crash. The window restarts after a
+crash but stays closed after a normal close/quit. This runs while logged in;
+it is not a system service before login, and sleeping Macs cannot collect samples.
+
+The default port is **49173**, taken from `package.json` by the server, app build,
+and service installer. It binds only to `127.0.0.1`, away from usual development
+ports. A database lock prevents duplicate loggers even on different ports, and a
+second server on the same address/port exits before sampling. launchd maintains
+one managed process. Stale locks recover after a crash (typically 10–20 seconds). Port conflicts are reported in the service logs.
+Manual `PORT` overrides are for development; the installed window/service use
+the manifest port. Re-run `service:install` after moving the checkout, changing
+Node's executable location, or updating the native app.
+
+Logs are in `~/Library/Logs/temp-logger/`. Agent definitions are in
+`~/Library/LaunchAgents/`. The service runs the primary checkout directly and
+stores data in its `data/temps.db`; keep that checkout available. Native builds
+use Apple's Swift compiler and Cocoa/WebKit frameworks, with no added npm
+runtime dependencies. `npm run build:desktop` creates the app bundle in `dist/`.

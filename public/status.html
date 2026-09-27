@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Logger Status — Temp Logger</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="title"><h1>Logger <span class="accent">Status</span></h1><p class="subtitle" id="status-version">Checking process…</p></div>
+    <a class="btn nav-link" href="/">Dashboard</a>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="panel-head"><h2>Logger process</h2><span id="process-status" class="pill unknown" role="status">Checking…</span></div>
+      <dl class="status-details">
+        <dt>Process ID</dt><dd id="process-id">—</dd>
+        <dt>Uptime</dt><dd id="process-uptime">—</dd>
+        <dt>Latest saved sample</dt><dd id="process-latest">—</dd>
+        <dt>Storage interval</dt><dd id="process-interval">—</dd>
+        <dt>Total stored datapoints</dt><dd id="process-rows">—</dd>
+        <dt>Sensor backend</dt><dd id="process-backend">—</dd>
+      </dl>
+      <p id="process-error" class="fine" role="status"></p>
+      <p id="status-checked" class="fine">Updates every 5 seconds.</p>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Daily logging · last 30 days</h2></div>
+      <p class="fine" id="activity-explanation">A datapoint is one stored sensor value; a sampling cycle can contain several datapoints.</p>
+      <div class="chart-wrap"><canvas id="daily-counts" aria-label="Stored datapoints per day" role="img"></canvas></div>
+      <div class="table-scroll"><table class="stats" id="daily-table">
+        <thead><tr><th>Date</th><th>Sampling cycles</th><th>Datapoints</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+  </main>
+  <script src="/vendor/chart.js/chart.umd.min.js"></script>
+  <script src="/status.js"></script>
+</body>
+</html>

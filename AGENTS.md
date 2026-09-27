@@ -12,3 +12,11 @@ Follow Mike's global AGENTS.md guidance. This repository adds:
 - For sensor changes, run `npm run sensors:check` on supported hardware when available.
 - Non-trivial work uses sibling worktrees and squash PRs. Version each PR once.
 - GitHub Actions is the only deployment automation; this is a local app, not a hosted service.
+
+- Desktop/login changes require `npm run build:desktop` on macOS. Never install
+  login agents pointing at a temporary feature worktree; install from primary main.
+- Default app port comes from `package.json` config.port. Keep the native window
+  and launchd service aligned with it.
+- Stored temperatures and API temperatures are Celsius; F/C is display-only.
+- Workload is sampled in memory every second; summaries persist at the thermal
+  interval. CPU percentages are normalized across all cores.

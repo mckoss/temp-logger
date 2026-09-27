@@ -11,28 +11,40 @@ import { readFileSync } from 'node:fs';
 import { numberOption, timeRange } from './lib/config.js';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { lockDatabase } from './lib/instance.js';
 import { openDatabase } from './lib/db.js';
 import { detectBackend } from './lib/sensors.js';
 import { createLogger } from './lib/logger.js';
+import { createWorkloadMonitor, WORKLOAD_META } from './lib/workload.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const { version } = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
+const { version, config } = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
 const DEMO = process.argv.includes('--demo');
 const HOST = process.env.HOST || '127.0.0.1';
-const PORT = numberOption(process.env.PORT, 'PORT', 3000, { min: 1, max: 65535 });
+const PORT = numberOption(process.env.PORT, 'PORT', config.port, { min: 1, max: 65535 });
 const INTERVAL_MS = numberOption(process.env.INTERVAL_MS, 'INTERVAL_MS', DEMO ? 5000 : 300000, { min: 1, max: 2147483647 });
 const DB_PATH = process.env.DB_PATH || join(__dirname, 'data', DEMO ? 'demo.db' : 'temps.db');
 const RETENTION_DAYS = numberOption(process.env.RETENTION_DAYS, 'RETENTION_DAYS', 90, { min: 0.001, max: 36500, integer: false });
 
+const releaseDatabase = lockDatabase(DB_PATH);
 const db = openDatabase(DB_PATH);
-const backend = await detectBackend({ demo: DEMO });
+const thermalBackend = await detectBackend({ demo: DEMO });
+const workload = createWorkloadMonitor({ intervalMs: Math.min(1000, INTERVAL_MS), demo: DEMO });
+const backend = {
+  ...thermalBackend,
+  meta: { ...thermalBackend.meta, ...WORKLOAD_META },
+  async sample() {
+    const thermal = await thermalBackend.sample();
+    const load = await workload.flush();
+    return { readings: { ...thermal.readings, ...load.readings }, meta: { ...thermal.meta, ...load.meta } };
+  },
+};
 const logger = createLogger({
   db,
   backend,
   intervalMs: INTERVAL_MS,
 });
-logger.start();
 
 // Hourly purge of readings older than the retention window.
 const purgeTimer = setInterval(() => {
@@ -46,6 +58,7 @@ const purgeTimer = setInterval(() => {
 
 const app = express();
 app.use(express.static(join(__dirname, 'public')));
+app.get('/status', (req, res) => res.sendFile(join(__dirname, 'public', 'status.html')));
 app.use('/vendor/chart.js', express.static(join(__dirname, 'node_modules', 'chart.js', 'dist')));
 
 function badRequest(fn) {
@@ -67,6 +80,8 @@ app.get('/api/status', asyncHandler(async (req, res) => {
   res.json({
     ...logger.status(),
     version,
+    pid: process.pid,
+    workload: workload.status(),
     rows: db.rowCount(),
     retentionDays: RETENTION_DAYS,
     serverTime: Date.now(),
@@ -87,6 +102,14 @@ app.get('/api/sensors', asyncHandler(async (req, res) => {
     })),
   });
 }));
+
+app.get('/api/activity', (req, res) => {
+  res.json({ days: db.dailyCounts(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+});
+
+app.get('/api/workload', (req, res) => {
+  res.set('Cache-Control', 'no-store').json(workload.status());
+});
 
 app.get('/api/current', asyncHandler(async (req, res) => {
   res.json({ latest: db.latest(), serverTime: Date.now() });
@@ -141,9 +164,21 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, HOST, () => {
+  workload.start();
+  logger.start();
   console.log(`[temp-logger] backend : ${backend.name}`);
   console.log(`[temp-logger] dashboard: http://${HOST}:${PORT}`);
   if (backend.hint) console.log(`[temp-logger] setup   : ${backend.hint}`);
+});
+
+server.on('error', async err => {
+  console.error(`[temp-logger] ${err.code === 'EADDRINUSE' ? 'Another instance is already using this address and port' : err.message}`);
+  clearInterval(purgeTimer);
+  await logger.stop();
+  await workload.stop();
+  db.close();
+  releaseDatabase();
+  process.exitCode = 1;
 });
 
 let shuttingDown = false;
@@ -152,8 +187,10 @@ async function shutdown() {
   shuttingDown = true;
   clearInterval(purgeTimer);
   await logger.stop();
+  await workload.stop();
   server.close(() => {
     db.close();
+    releaseDatabase();
     process.exit(0);
   });
   setTimeout(() => process.exit(0), 3000).unref();

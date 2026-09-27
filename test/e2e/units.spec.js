@@ -1,0 +1,76 @@
+import { test, expect } from '@playwright/test';
+
+async function fixedReadings(page) {
+  const ts = Date.now();
+  const readings = { cpu: 20, gpu: 30, fan1: 2000, fan2: 2100 };
+  await page.route('**/api/current', route => route.fulfill({ json: {
+    latest: Object.entries(readings).map(([sensor, value_c]) => ({ sensor, value_c, ts })),
+  } }));
+  await page.route('**/api/history?*', route => route.fulfill({ json: {
+    series: Object.fromEntries(Object.entries(readings).map(([sensor, value_c]) => [sensor, [{ ts, value_c }]])),
+  } }));
+  await page.route('**/api/aggregate?*', route => route.fulfill({ json: {
+    bucket: 'day',
+    series: Object.fromEntries(Object.entries(readings).map(([sensor, avg]) => [sensor, [{ ts, min: avg - 10, max: avg + 10, avg, n: 3 }]])),
+  } }));
+  await page.route('**/api/stats?*', route => route.fulfill({ json: {
+    stats: Object.fromEntries(Object.entries(readings).map(([sensor, avg]) => [sensor, { min: avg - 10, max: avg + 10, avg, n: 3 }])),
+  } }));
+}
+
+async function chartState(page) {
+  return page.evaluate(() => {
+    const history = Chart.getChart('hist-temp');
+    const trend = Chart.getChart('trend-temp');
+    const fan = Chart.getChart('hist-fan');
+    return {
+      history: history.data.datasets[0].data,
+      trend: trend.data.datasets.slice(0, 3).map(dataset => dataset.data[0]),
+      axis: history.options.scales.y.title.text,
+      trendAxis: trend.options.scales.y.title.text,
+      tooltip: history.options.plugins.tooltip.callbacks.label({ dataset: { label: 'CPU' }, parsed: { y: history.data.datasets[0].data[0] } }),
+      fan: fan.data.datasets[0].data,
+      fanAxis: fan.options.scales.y.title.text,
+      hidden: !trend.isDatasetVisible(2),
+    };
+  });
+}
+
+test('unit toggle converts every temperature display, preserves RPM, and persists', async ({ page }) => {
+  await fixedReadings(page);
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-temp')?.data.datasets.length)).toBe(6);
+  await expect(page.getByRole('button', { name: 'Celsius', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
+  await page.locator('#chips-trend-temp').getByRole('button', { name: 'CPU', exact: true }).click();
+  await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Fahrenheit', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
+  await expect(page.locator('#stats-table tbody tr').first().locator('td')).toHaveText(['CPU', '68.0 °F', '50.0 °F', '86.0 °F', '68.0 °F', '3']);
+  expect(await chartState(page)).toEqual({ history: [68], trend: [86, 50, 68], axis: '°F', trendAxis: '°F', tooltip: ' CPU: 68.0 °F', fan: [2000], fanAxis: 'RPM', hidden: true });
+  await expect(page.locator('#cards .card').nth(2)).toContainText('2,000 RPM');
+
+  // Subsequent API refreshes still arrive in Celsius and display correctly.
+  const historyResponse = page.waitForResponse(response => response.url().includes('/api/history?'));
+  await page.locator('#ranges').getByRole('button', { name: '1H', exact: true }).click();
+  expect((await (await historyResponse).json()).series.cpu[0].value_c).toBe(20);
+  await expect.poll(async () => (await chartState(page)).history).toEqual([68]);
+  await page.reload();
+  await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-temp')?.data.datasets.length)).toBe(6);
+  await page.getByRole('button', { name: 'Celsius', exact: true }).click();
+  await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
+  expect((await chartState(page)).trend).toEqual([30, 10, 20]);
+  await expect(page.locator('#stats-table tbody tr').first().locator('td')).toHaveText(['CPU', '20.0 °C', '10.0 °C', '30.0 °C', '20.0 °C', '3']);
+});
+
+test('unit toggle works when browser storage is disabled', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage blocked'); } });
+  });
+  await fixedReadings(page);
+  await page.goto('/');
+  await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
+  await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
+  await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
+});

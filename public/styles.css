@@ -323,3 +323,25 @@ footer { flex-wrap: wrap; }
 .ranges { flex-wrap: wrap; }
 
 table.stats td { white-space: nowrap; }
+
+.header-controls { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+#temperature-units button { min-height: 36px; min-width: 40px; }
+#temperature-units button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+
+.workload-live { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.workload-gauge { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); min-width: 0; }
+.workload-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.workload-heading h2 { font-size: 1rem; margin: 0; }
+.workload-heading span { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.workload-gauge meter { width: 100%; height: 1.4rem; margin: 0.5rem 0; }
+.workload-gauge meter::-webkit-meter-bar { background: var(--panel-2); border: 1px solid var(--border); }
+.workload-gauge meter::-webkit-meter-optimum-value { background: linear-gradient(90deg, var(--amber), var(--red)); }
+.workload-gauge meter::-moz-meter-bar { background: var(--amber); }
+.workload-gauge .fine { display: block; }
+#workload-info { margin: -0.5rem 0 0; }
+@media (max-width: 640px) { .workload-gauge { padding: 0.75rem; } .workload-heading span { font-size: 1.15rem; } }
+
+.nav-link { text-decoration: none; display: inline-block; }
+.status-details { display: grid; grid-template-columns: auto 1fr; gap: 0.75rem 1.5rem; }
+.status-details dt { color: var(--muted); }
+.status-details dd { margin: 0; overflow-wrap: anywhere; }
