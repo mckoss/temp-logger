@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -56,7 +57,15 @@ if (action === 'install') {
     writeFileSync(path, plist(label, args, keepAlive));
     execFileSync('/usr/bin/plutil', ['-lint', path], { stdio: 'inherit' });
     command(['enable', `${domain}/${label}`]);
-    command(['bootstrap', domain, path]);
+    // bootout can return before launchd finishes removing the old job.
+    for (let attempt = 0; ; attempt++) {
+      const result = spawnSync('/bin/launchctl', ['bootstrap', domain, path], { encoding: 'utf8' });
+      if (result.status === 0) break;
+      if (result.status !== 5 || attempt >= 4) {
+        throw new Error(result.stderr || result.error?.message || `launchd bootstrap failed: ${result.status}`);
+      }
+      await delay(1000);
+    }
   }
   console.log(`Installed login service and ${appPath}. Logs: ${logs}`);
 } else if (action === 'uninstall') {

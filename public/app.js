@@ -237,7 +237,12 @@ function chartOptions(trends) {
         ...axis(`Temperature (${temperatureUnit}) · guide zones`, 'left', true),
         suggestedMin: displayValue(20, '°C'), suggestedMax: displayValue(Math.max(100, zoneBounds[2] + 5), '°C'),
         afterBuildTicks: scale => {
-          const values = [...new Set([...scale.ticks.map(tick => tick.value), ...zoneBounds.map(value => displayValue(value, '°C'))])];
+          const boundaries = zoneBounds.map(value => displayValue(value, '°C'));
+          // Preserve guide labels without crowding a nearby automatic tick.
+          const spacing = (scale.max - scale.min) * 0.045;
+          const regular = scale.ticks.map(tick => tick.value).filter(value =>
+            boundaries.every(boundary => Math.abs(boundary - value) >= spacing));
+          const values = [...new Set([...regular, ...boundaries])];
           scale.ticks = values.filter(value => value >= scale.min && value <= scale.max).sort((a, b) => a - b).map(value => ({ value }));
         },
         ticks: {
