@@ -120,6 +120,10 @@ app.get('/api/activity', (req, res) => {
 
 app.get('/api/live', (req, res) => {
   const series = { power: power.recent() };
+  const recentWorkload = workload.recent();
+  for (const sensor of ['cpu', 'gpu']) {
+    series[`${sensor}_load`] = recentWorkload.map(row => ({ ts: row.ts, value_c: row[sensor] }));
+  }
   for (const sample of liveThermals) for (const [sensor, value_c] of Object.entries(sample.readings)) {
     (series[sensor] ||= []).push({ ts: sample.ts, value_c });
   }

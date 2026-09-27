@@ -48,7 +48,7 @@ instructions; real mode never silently substitutes demo data.
 - Current CPU/GPU temperature cards and live CPU/GPU utilization meters.
 - Header °C/°F toggle updates all temperature displays and remembers your choice
   in this browser. Stored readings and API values always remain in Celsius.
-- Two groups, each stacking **Temperatures → Fans → Power**. Every plot has
+- Two groups, each stacking **Temperatures → Utilization → Fans → Power**. Every plot has
   exactly one independent y-axis. Plot edges and time limits align; only the
   bottom plot displays the time axis. Hovering shares a vertical cursor.
 - Real time: five-second live updates, one hour of in-memory recent readings,
@@ -229,7 +229,7 @@ the uncommitted interval. The existing temperature database and Celsius values
 remain unchanged. Power readings need the built native helper on macOS; demo
 mode uses synthetic power and works without the helper on Linux.
 
-- `GET /api/live`: recent in-memory temperature/fan/power series and power health.
+- `GET /api/live`: recent in-memory temperature/utilization/fan/power series and power health.
 - `GET /api/power?from=...&to=...&bucket=day|week`: saved intervals and calendar
   energy totals, average watts, measured milliseconds, coverage, and partial flags.
 - `/status` and `/api/status` include power sensor availability.
@@ -259,3 +259,9 @@ sensor extremes in each daily bucket, alongside the existing temporal bands.
 Individual current sensor values are listed on the status page. Sensor bounds
 are stored as `cpu_min`, `cpu_max`, `gpu_min`, and `gpu_max` in Celsius; older
 samples without bounds do not get fabricated error bars.
+
+CPU/GPU utilization has its own 0–100% panel below temperatures in both chart
+groups, aligned to the same time axis. Real time combines one-second samples
+from the last hour (kept in memory) with saved five-minute averages. Long-term
+lines show daily averages of those saved summaries, with their min/max bands.
+Unavailable live samples are gaps, not zero. CPU 100% means all cores busy.
