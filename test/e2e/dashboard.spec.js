@@ -241,3 +241,27 @@ test('two groups have four non-overlapping plots with one y-axis each and exactl
   });
   expect(ratio).toBeCloseTo(4);
 });
+
+
+test('display-scale changes repair chart sizes without losing series visibility', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-utilization')?.data.datasets.length)).toBe(6);
+  await page.locator('#chips-history-temperature button').first().click();
+  for (const ratio of [2, 1, 2]) {
+    await page.evaluate(ratio => {
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: ratio });
+      // Reproduce stale canvas sizing while its containing window stays the same size.
+      for (const chart of Object.values(Chart.instances)) chart.resize(320, 100);
+      window.dispatchEvent(new Event('mac-thermals-display-change'));
+    }, ratio);
+    await expect.poll(() => page.evaluate(() => Object.values(Chart.instances).every(chart => {
+      const parent = chart.canvas.parentElement;
+      return Math.abs(chart.width - parent.clientWidth) <= 1 &&
+        Math.abs(chart.height - parent.clientHeight) <= 1 &&
+        chart.currentDevicePixelRatio === window.devicePixelRatio &&
+        chart.canvas.width === Math.floor(chart.width * window.devicePixelRatio);
+    }))).toBe(true);
+    expect(await page.evaluate(() => Chart.getChart('history-chart').isDatasetVisible(0))).toBe(false);
+  }
+});

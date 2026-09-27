@@ -339,6 +339,32 @@ function buildChartBlocks() {
     }
   }
 }
+// A screen change may alter backing resolution without a container resize event.
+// Re-measure after layout settles, keeping data, selected ranges, and hidden series.
+let chartResizeTimer;
+function scheduleChartResize() {
+  clearTimeout(chartResizeTimer);
+  chartResizeTimer = setTimeout(() => requestAnimationFrame(() => {
+    for (const { chart } of Object.values(charts)) {
+      if (!chart.canvas.isConnected || !chart.canvas.parentElement.clientWidth) continue;
+      chart.resize();
+      chart.update('none');
+    }
+  }), 150);
+}
+window.addEventListener('mac-thermals-display-change', scheduleChartResize);
+window.addEventListener('resize', scheduleChartResize);
+window.addEventListener('pageshow', scheduleChartResize);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleChartResize(); });
+let displayResolution;
+function watchDisplayResolution() {
+  displayResolution?.removeEventListener('change', displayResolutionChanged);
+  displayResolution = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  displayResolution.addEventListener('change', displayResolutionChanged);
+}
+function displayResolutionChanged() { watchDisplayResolution(); scheduleChartResize(); }
+watchDisplayResolution();
+
 function datasetStyle(sensor, kind) {
   return { sensor, unit: sensorUnit(sensor), yAxisID: kind, label: sensorLabel(sensor), borderColor: sensorColor(sensor), borderWidth: 2, pointBackgroundColor: sensorColor(sensor), pointHoverRadius: 4, tension: 0, spanGaps: false };
 }
