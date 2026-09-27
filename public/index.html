@@ -65,10 +65,11 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Detailed history</h2>
+        <h2>Real time</h2>
         <div class="ranges" id="ranges" role="group" aria-label="Time range"></div>
       </div>
-      <p class="fine">All sensors on one timeline · temperature, RPM, and workload use separate axes · click a legend label to show or hide a series.</p>
+      <p class="fine">Live readings refresh every five seconds · saved history fills earlier periods · one shared time axis.</p>
+      <p id="power-info" class="fine"></p><p id="history-error" class="fine" role="status"></p>
       <div id="history-charts"></div>
     </section>
 
@@ -77,6 +78,8 @@
         <h2>Long-term trends <span class="h2-sub">min / max band &amp; average</span></h2>
         <div class="ranges" id="trend-ranges" role="group" aria-label="Trend range"></div>
       </div>
+      <label class="fine">Energy totals <select id="energy-bucket"><option value="day">Daily</option><option value="week">Weekly</option></select></label>
+      <p id="energy-info" class="fine"></p><p id="trend-error" class="fine" role="status"></p>
       <div id="trend-charts"></div>
     </section>
 

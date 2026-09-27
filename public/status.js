@@ -34,9 +34,10 @@ async function refresh() {
     $('process-latest').textContent = status.lastSample ? new Date(status.lastSample.ts).toLocaleString() : 'No sample saved since startup';
     $('process-interval').textContent = `${status.intervalMs / 1000} seconds`;
     $('process-rows').textContent = status.rows.toLocaleString();
+    $('process-power').textContent = status.power?.current ? `${status.power.current.watts.toFixed(1)} W · estimated input rail` : (status.power?.lastError || 'Unavailable');
     $('process-thermal').textContent = status.thermal?.state?.label || 'Unavailable';
     $('process-backend').textContent = status.backendLabel;
-    $('process-error').textContent = [status.lastError, status.workload?.lastError, status.thermal?.stateError, status.thermal?.sensorError].filter(Boolean).join(' · ');
+    $('process-error').textContent = [status.lastError, status.workload?.lastError, status.thermal?.stateError, status.thermal?.sensorError, status.power?.lastError].filter(Boolean).join(' · ');
     $('status-checked').textContent = `Confirmed at ${new Date().toLocaleTimeString()} · updates every 5 seconds`;
   } catch {
     $('process-status').className = 'pill error';

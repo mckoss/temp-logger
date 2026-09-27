@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 async function fixedReadings(page) {
+  await page.route('**/api/live', route => route.fulfill({ json: { series: {}, power: {} } }));
   const ts = Date.now();
   const readings = { cpu: 20, gpu: 30, fan1: 2000, fan2: 2100 };
   await page.route('**/api/thermal', route => route.fulfill({ json: { latest: { ts, readings }, state: { label: 'Nominal', level: 0 } } }));
@@ -23,7 +24,7 @@ async function chartState(page) {
   return page.evaluate(() => {
     const history = Chart.getChart('history-chart');
     const trend = Chart.getChart('trend-chart');
-    const fan = Chart.getChart('history-chart');
+    const fan = Chart.getChart('history-fans');
     return {
       history: history.data.datasets[0].data.map(point => point.y),
       trend: trend.data.datasets.slice(0, 3).map(dataset => dataset.data[0].y),
@@ -40,10 +41,10 @@ async function chartState(page) {
 test('unit toggle converts every temperature display, preserves RPM, and persists', async ({ page }) => {
   await fixedReadings(page);
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(6);
   await expect(page.getByRole('button', { name: 'Celsius', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
-  await page.locator('#chips-trend').getByRole('button', { name: 'CPU', exact: true }).click();
+  await page.locator('#chips-trend-temperature').getByRole('button', { name: 'CPU', exact: true }).click();
   await page.getByRole('button', { name: 'Fahrenheit', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Fahrenheit', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
@@ -58,7 +59,7 @@ test('unit toggle converts every temperature display, preserves RPM, and persist
   await expect.poll(async () => (await chartState(page)).history).toEqual([68]);
   await page.reload();
   await expect(page.locator('#cards .card').first()).toContainText('68.0 °F');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(6);
   await page.getByRole('button', { name: 'Celsius', exact: true }).click();
   await expect(page.locator('#cards .card').first()).toContainText('20.0 °C');
   expect((await chartState(page)).trend).toEqual([30, 10, 20]);
