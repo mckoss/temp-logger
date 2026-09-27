@@ -12,6 +12,7 @@ for npm's native addon compilation. Install the tools once if needed with
 
 ```sh
 npm ci
+npm run build:desktop  # macOS: compile the bundled sensor helpers and window
 npm run sensors:check
 npm start
 # Open http://127.0.0.1:49173
@@ -21,7 +22,8 @@ All application and test dependencies are declared in `package.json`, locked
 in `package-lock.json`, and served locally; there are no CDN assets, global npm
 packages, or required Homebrew sensor tools. The platform-specific
 [`macos-temperature-sensor`](https://github.com/sebhildebrandt/macos-temperature-sensor)
-dependency provides CPU/GPU readings and fan RPMs without sudo. It is optional
+dependency provides fan RPMs without sudo. CPU/GPU temperatures use the bundled
+SMC helper and chip-specific mappings described below. It is optional
 so installation and demo/testing work on other platforms. Native compilation
 still requires the system toolchain described above; npm cannot supply macOS
 frameworks or Apple's compiler. `npm run sensors:check` fails clearly if no
@@ -57,8 +59,8 @@ instructions; real mode never silently substitutes demo data.
 - Long-term trends: temperature/fan min/max bands and average lines over 7D–90D,
   with daily or Monday-start weekly kWh bars. Pale bars mark incomplete periods;
   tooltips include average watts and measured coverage. Missing periods remain blank.
-- Sensor chips toggle temperature and fan series. Workload stays in the live
-  meters and range statistics; it is not overlaid on these plots.
+- Sensor chips toggle temperature, utilization, and fan series. CPU/GPU workload
+  also appears in the live meters and range statistics.
 - Current/min/max/average/sample count per sensor.
 - App version from `package.json`, displayed in the header and `/api/status`.
 
@@ -179,7 +181,7 @@ use Apple's Swift compiler and Cocoa/WebKit frameworks, with no added npm
 runtime dependencies. `npm run build:desktop` creates the app bundle in `dist/`.
 
 
-## Thermal pressure and display guides
+## Thermal pressure and Temperature Zones
 
 Current CPU/GPU cards refresh from live sensor observations about every five
 seconds, independently of five-minute database writes. `/api/thermal` exposes
@@ -199,6 +201,10 @@ Numbered chart/card zones are **app-defined visual guides**, not Apple limits or
 recommended safe temperatures. Defaults are below 60°C, 60–80°C, 80–95°C, and
 95°C or above. Edit the three boundaries in “Temperature Zones”; choices
 are stored in this browser. Boundaries and axis labels convert with °C/°F.
+Zones 1–4 use green, yellow, orange, and red. Each temperature card follows
+its average temperature’s zone, with a matching border, reading color, and tint.
+Temperature plots use a solid axis strip and 20%-opacity background bands.
+The dashboard lists the zone ranges without explanatory prose.
 Use macOS pressure to assess reported thermal stress rather than inferring a
 throttle event from a guide-zone number. Historical chart bands are guides,
 not historical measurements of macOS thermal pressure.
@@ -265,3 +271,9 @@ groups, aligned to the same time axis. Real time combines one-second samples
 from the last hour (kept in memory) with saved five-minute averages. Long-term
 lines show daily averages of those saved summaries, with their min/max bands.
 Unavailable live samples are gaps, not zero. CPU 100% means all cores busy.
+
+## Follow-up work
+
+See [TODO.md](TODO.md) for remaining validation and polish. The native application
+and launchd identifiers still use `Temp Logger` / `temp-logger`; the dashboard
+is named **Mac Thermals**. Do not rename the installed bundle or services casually.

@@ -219,6 +219,7 @@ test('two groups have four non-overlapping plots with one y-axis each and exactl
   await expect(page.locator('canvas')).toHaveCount(8);
   await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(2);
   for (const group of ['history', 'trend']) {
+    await expect.poll(() => page.evaluate(group => Chart.getChart(`${group}-utilization`)?.data.datasets.length, group)).toBe( group === 'history' ? 2 : 6 );
     const plots = await page.evaluate(group => ['chart', 'utilization', 'fans', 'power'].map(kind => {
       const chart = Chart.getChart(`${group}-${kind}`), rect = chart.canvas.getBoundingClientRect();
       return { axes: Object.keys(chart.scales), left: chart.chartArea.left, right: chart.chartArea.right, min: chart.scales.x.min, max: chart.scales.x.max, timeVisible: chart.options.scales.x.display, top: rect.top, bottom: rect.bottom, units: chart.data.datasets.map(dataset => dataset.unit) };
