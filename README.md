@@ -45,14 +45,20 @@ instructions; real mode never silently substitutes demo data.
 
 ## Dashboard
 
-- Current CPU/GPU temperatures and per-fan speed (RPM).
+- Current CPU/GPU temperature cards and live CPU/GPU utilization meters.
 - Header °C/°F toggle updates all temperature displays and remembers your choice
   in this browser. Stored readings and API values always remain in Celsius.
-- One detailed chart overlays temperature, fans, and workload over 1H–30D,
-  with independent °C/°F, RPM, and 0–100% axes and up to 5,000 saved points per series.
-  Values use their actual timestamps. Click legend entries to isolate series.
-- One combined long-term chart shows hourly/daily min/max bands and average
-  lines over 7D–90D, with per-sensor toggle chips.
+- Two groups, each stacking **Temperatures → Fans → Power**. Every plot has
+  exactly one independent y-axis. Plot edges and time limits align; only the
+  bottom plot displays the time axis. Hovering shares a vertical cursor.
+- Real time: five-second live updates, one hour of in-memory recent readings,
+  and saved history over 1H–30D. Temperatures occupy twice the fan plot height.
+  Power shows live watts and time-weighted saved interval averages.
+- Long-term trends: temperature/fan min/max bands and average lines over 7D–90D,
+  with daily or Monday-start weekly kWh bars. Pale bars mark incomplete periods;
+  tooltips include average watts and measured coverage. Missing periods remain blank.
+- Sensor chips toggle temperature and fan series. Workload stays in the live
+  meters and range statistics; it is not overlaid on these plots.
 - Current/min/max/average/sample count per sensor.
 - App version from `package.json`, displayed in the header and `/api/status`.
 
@@ -123,7 +129,7 @@ not zero. Short bursts between polls can still be missed.
 
 Only summaries are saved with each thermal sample (five minutes by default):
 `cpu_load` / `gpu_load` are averages, and `cpu_peak` / `gpu_peak` are sampled peaks.
-All four use `%` metadata and the 0–100% workload axis in both combined charts. CPU averages are
+All four use `%` metadata in storage and range statistics. CPU averages are
 weighted by observed CPU time; GPU averages are the mean of valid observations.
 The first summary appears after the first storage interval. Live observations
 remain in memory and do not create extra SQLite rows. Shutdown or a crash may
@@ -196,3 +202,34 @@ are stored in this browser. Boundaries and axis labels convert with °C/°F.
 Use macOS pressure to assess reported thermal stress rather than inferring a
 throttle event from a guide-zone number. Historical chart bands are guides,
 not historical measurements of macOS thermal pressure.
+
+## Estimated power and energy
+
+`npm run build:desktop` builds a small read-only AppleSMC helper from the bundled
+`native/PowerStatus.c`. No extra npm or external sensor program is required.
+It reads **PD0R input-rail power** on supported Macs. This is an undocumented
+hardware estimate, **not calibrated wall consumption**; do not use it as a
+utility-billing measurement. Zero, invalid, or unavailable values are reported
+as unavailable, never substituted with another unidentified rail. The conventional
+PSTR total-power sensor returned zero on the development Mac and is not used.
+Source: [VirtualSMC sensor-key reference](https://github.com/acidanthera/VirtualSMC/blob/master/Docs/SMCSensorKeys.txt).
+
+Power is sampled about once a second. Trapezoidal integration produces Wh and
+time-weighted average watts, persisted with the logging interval (five minutes
+by default) in an additive `power_intervals` table. Contiguous observations are
+compressed in memory, split at local midnight, and committed as interval summaries.
+Intervals crossing the requested range boundary are prorated using their average
+power. Daily/weekly kWh sum measured energy and use actual local calendar lengths,
+including daylight saving changes. No energy history is invented for dates before
+power logging began. Sleep, read failures, and gaps longer than three sample
+intervals break integration. Coverage exposes these missing periods.
+
+Normal shutdown saves the unfinished power interval; a crash can lose at most
+the uncommitted interval. The existing temperature database and Celsius values
+remain unchanged. Power readings need the built native helper on macOS; demo
+mode uses synthetic power and works without the helper on Linux.
+
+- `GET /api/live`: recent in-memory temperature/fan/power series and power health.
+- `GET /api/power?from=...&to=...&bucket=day|week`: saved intervals and calendar
+  energy totals, average watts, measured milliseconds, coverage, and partial flags.
+- `/status` and `/api/status` include power sensor availability.

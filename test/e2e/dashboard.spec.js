@@ -33,7 +33,7 @@ test.describe('dashboard', () => {
     await page.goto('/');
     // All sensors share a single history canvas.
     await expect(page.locator('#history-chart')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('canvas')).toHaveCount(2);
+    await expect(page.locator('canvas')).toHaveCount(6);
 
     // Wait for data to land in the stats table, then switch ranges.
     await expect(page.locator('#stats-table tbody tr').first()).toBeVisible({
@@ -51,7 +51,7 @@ test.describe('dashboard', () => {
     await page.goto('/');
     await expect(page.locator('#trend-chart')).toBeVisible({ timeout: 15000 });
     // Per-sensor toggle chips exist under each trend chart.
-    await expect(page.locator('#chips-trend .chip').first()).toBeVisible();
+    await expect(page.locator('#chips-trend-temperature .chip').first()).toBeVisible();
     await page.locator('#trend-ranges').getByRole('button', { name: '7D' }).click();
     await expect(page.locator('#trend-ranges button.active')).toHaveText('7D');
   });
@@ -175,8 +175,8 @@ test('charts handle a missing sensor and keep trend toggles aligned', async ({ p
     await route.fulfill({ json: body });
   });
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(24);
-  await page.locator('#chips-trend').getByRole('button', { name: 'GPU', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => Chart.getChart('trend-chart')?.data.datasets.length)).toBe(6);
+  await page.locator('#chips-trend-temperature').getByRole('button', { name: 'GPU', exact: true }).click();
   expect(await page.evaluate(() => Chart.getChart('trend-chart').isDatasetVisible(5))).toBe(false);
   await page.locator('#trend-ranges').getByRole('button', { name: '7D', exact: true }).click();
   await expect(page.locator('#trend-ranges button.active')).toHaveText('7D');
@@ -193,11 +193,12 @@ test('dashboard fits a narrow screen', async ({ page }) => {
 
 
 test('single-sample charts show visible points and concise axis labels', async ({ page }) => {
+  await page.route('**/api/live', route => route.fulfill({ json: { series: {}, power: {} } }));
   await page.route('**/api/history?*', route => route.fulfill({ json: {
-    series: { cpu: [{ ts: Date.now(), value_c: 62.3 }], gpu: [{ ts: Date.now(), value_c: 60.5 }] },
+    series: { cpu: [{ ts: Date.now() - 1000, value_c: 62.3 }], gpu: [{ ts: Date.now() - 1000, value_c: 60.5 }] },
   } }));
   await page.goto('/');
-  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(8);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(2);
   const chart = await page.evaluate(() => {
     const chart = Chart.getChart('history-chart');
     return { radius: chart.data.datasets[0].pointRadius, labels: chart.scales.temperature.ticks.map(tick => String(tick.label)) };
@@ -206,33 +207,35 @@ test('single-sample charts show visible points and concise axis labels', async (
   expect(chart.labels.every(label => label.length < 14)).toBeTruthy();
 });
 
-test('two combined charts use independent unit axes and fill the window', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
+test('two groups have three non-overlapping plots with one y-axis each and exactly aligned time axes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
   const ts = Date.now() - 60000;
-  let maxPoints;
-  await page.route('**/api/history?*', route => {
-    maxPoints = new URL(route.request().url()).searchParams.get('maxPoints');
-    return route.fulfill({ json: { series: {
-      cpu: [{ ts, value_c: 50 }, { ts: ts + 10000, value_c: 60 }, { ts: ts + 50000, value_c: 55 }],
-      fan1: [{ ts, value_c: 2000 }], cpu_load: [{ ts, value_c: 75 }], gpu_load: [{ ts, value_c: 25 }],
-    } } });
-  });
+  await page.route('**/api/live', route => route.fulfill({ json: { series: {}, power: {} } }));
+  await page.route('**/api/history?*', route => route.fulfill({ json: { series: {
+    cpu: [{ ts, value_c: 50 }, { ts: ts + 10000, value_c: 60 }, { ts: ts + 50000, value_c: 55 }],
+    fan1: [{ ts, value_c: 2000 }], cpu_load: [{ ts, value_c: 75 }],
+  } } }));
   await page.goto('/');
-  await expect(page.locator('canvas')).toHaveCount(2);
-  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(8);
-  expect(maxPoints).toBe('5000');
-  const details = await page.evaluate(() => {
-    const chart = Chart.getChart('history-chart');
-    const cpu = chart.data.datasets.find(dataset => dataset.sensor === 'cpu');
-    const x = cpu.data.map(point => chart.scales.x.getPixelForValue(point.x));
-    return { axes: Object.fromEntries(chart.data.datasets.map(dataset => [dataset.sensor, dataset.yAxisID])), spacingRatio: (x[2] - x[1]) / (x[1] - x[0]), cardWidths: [...document.querySelectorAll('#cards .card')].map(card => card.getBoundingClientRect().width) };
+  await expect(page.locator('canvas')).toHaveCount(6);
+  await expect.poll(() => page.evaluate(() => Chart.getChart('history-chart')?.data.datasets.length)).toBe(2);
+  for (const group of ['history', 'trend']) {
+    const plots = await page.evaluate(group => ['chart', 'fans', 'power'].map(kind => {
+      const chart = Chart.getChart(`${group}-${kind}`), rect = chart.canvas.getBoundingClientRect();
+      return { axes: Object.keys(chart.scales), left: chart.chartArea.left, right: chart.chartArea.right, min: chart.scales.x.min, max: chart.scales.x.max, timeVisible: chart.options.scales.x.display, top: rect.top, bottom: rect.bottom, units: chart.data.datasets.map(dataset => dataset.unit) };
+    }), group);
+    expect(plots.map(plot => plot.axes)).toEqual([['x', 'temperature'], ['x', 'fans'], ['x', 'power']]);
+    expect(plots.map(plot => plot.timeVisible)).toEqual([false, false, true]);
+    expect(new Set(plots.map(plot => plot.left)).size).toBe(1);
+    expect(new Set(plots.map(plot => plot.right)).size).toBe(1);
+    expect(new Set(plots.map(plot => plot.min)).size).toBe(1);
+    expect(new Set(plots.map(plot => plot.max)).size).toBe(1);
+    expect(plots[0].bottom).toBeLessThan(plots[1].top);
+    expect(plots[1].bottom).toBeLessThan(plots[2].top);
+    expect(plots.flatMap(plot => plot.units)).not.toContain('%');
+  }
+  const ratio = await page.evaluate(() => {
+    const c = Chart.getChart('history-chart'), x = c.data.datasets[0].data.map(p => c.scales.x.getPixelForValue(p.x));
+    return (x[2] - x[1]) / (x[1] - x[0]);
   });
-  expect(details.axes.cpu).toBe('temperature');
-  expect(details.axes.fan1).toBe('fans');
-  expect(details.axes.cpu_load).toBe('load');
-  expect(details.axes.gpu_load).toBe('load');
-  expect(details.spacingRatio).toBeCloseTo(4);
-  expect(details.cardWidths).toHaveLength(2);
-  expect(details.cardWidths[0]).toBeGreaterThan(600);
-  expect(details.cardWidths[0]).toBe(details.cardWidths[1]);
+  expect(ratio).toBeCloseTo(4);
 });

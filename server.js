@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { lockDatabase } from './lib/instance.js';
 import { openDatabase } from './lib/db.js';
 import { detectBackend } from './lib/sensors.js';
+import { createPowerMonitor, aggregateEnergy } from './lib/power.js';
 import { createThermalMonitor } from './lib/thermal.js';
 import { createLogger } from './lib/logger.js';
 import { createWorkloadMonitor, WORKLOAD_META } from './lib/workload.js';
@@ -31,12 +32,18 @@ const RETENTION_DAYS = numberOption(process.env.RETENTION_DAYS, 'RETENTION_DAYS'
 const releaseDatabase = lockDatabase(DB_PATH);
 const db = openDatabase(DB_PATH);
 const thermalBackend = await detectBackend({ demo: DEMO });
-const thermal = createThermalMonitor({ backend: thermalBackend, demo: DEMO });
+let liveThermals = [];
+const thermal = createThermalMonitor({ backend: thermalBackend, demo: DEMO, onSample(sample) {
+  liveThermals.push(sample);
+  liveThermals = liveThermals.filter(row => row.ts >= Date.now() - 3600000).slice(-720);
+} });
+const power = createPowerMonitor({ intervalMs: Math.min(1000, INTERVAL_MS), demo: DEMO });
 const workload = createWorkloadMonitor({ intervalMs: Math.min(1000, INTERVAL_MS), demo: DEMO });
 const backend = {
   ...thermalBackend,
   meta: { ...thermalBackend.meta, ...WORKLOAD_META },
   async sample() {
+    db.insertPower(await power.flush());
     const temperatures = await thermal.sample();
     const load = await workload.flush();
     return { readings: { ...temperatures.readings, ...load.readings }, meta: { ...temperatures.meta, ...load.meta } };
@@ -85,6 +92,7 @@ app.get('/api/status', asyncHandler(async (req, res) => {
     pid: process.pid,
     workload: workload.status(),
     thermal: thermal.status(),
+    power: power.status(),
     rows: db.rowCount(),
     retentionDays: RETENTION_DAYS,
     serverTime: Date.now(),
@@ -108,6 +116,22 @@ app.get('/api/sensors', asyncHandler(async (req, res) => {
 
 app.get('/api/activity', (req, res) => {
   res.json({ days: db.dailyCounts(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+});
+
+app.get('/api/live', (req, res) => {
+  const series = { power: power.recent() };
+  for (const sample of liveThermals) for (const [sensor, value_c] of Object.entries(sample.readings)) {
+    (series[sensor] ||= []).push({ ts: sample.ts, value_c });
+  }
+  res.set('Cache-Control', 'no-store').json({ series, power: power.status() });
+});
+app.get('/api/power', (req, res) => {
+  const { from, to } = readRange(req.query, 86400000);
+  const bucket = req.query.bucket ?? 'day';
+  if (!['day', 'week'].includes(bucket)) return res.status(400).json({ error: 'bucket must be day or week' });
+  const intervals = db.powerIntervals(from, to);
+  const points = aggregateEnergy(intervals, from, to, bucket);
+  res.json({ from, to, bucket, intervals, points, ...power.status() });
 });
 
 app.get('/api/thermal', (req, res) => {
@@ -171,6 +195,7 @@ app.use((err, req, res, next) => {
 });
 
 const server = app.listen(PORT, HOST, () => {
+  power.start();
   workload.start();
   thermal.start();
   logger.start();
@@ -185,6 +210,7 @@ server.on('error', async err => {
   await logger.stop();
   await workload.stop();
   await thermal.stop();
+  await power.stop();
   db.close();
   releaseDatabase();
   process.exitCode = 1;
@@ -198,6 +224,8 @@ async function shutdown() {
   await logger.stop();
   await workload.stop();
   await thermal.stop();
+  await power.stop();
+  db.insertPower(await power.flush());
   server.close(() => {
     db.close();
     releaseDatabase();
