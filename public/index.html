@@ -51,9 +51,12 @@
     <p id="workload-info" class="fine" role="status"></p>
     <section id="cards" class="cards" aria-live="polite"></section>
     <p id="temperature-source-note" class="fine"></p>
+    <section class="thermal-guides" aria-label="About temperature guide zones">
+      <p><strong>What are guide zones?</strong> The numbered, shaded bands help you compare temperatures at a glance. Their boundaries are chosen by this app and can be edited; they are not Apple safety limits or throttling thresholds. Each card's zone uses its average temperature. The separate “macOS” reading reports the system's thermal pressure.</p>
+      <p id="zone-legend" class="fine"></p>
+    </section>
     <details class="thermal-guides">
       <summary>Temperature guide zones · not Apple limits</summary>
-      <p class="fine">These numbered zones are editable visual guides, not safe/unsafe or throttling boundaries. macOS thermal pressure is shown separately on the cards.</p>
       <form id="zone-form">
         <label>Zone 2 begins <input id="zone-1" type="number" step="0.1" required /></label>
         <label>Zone 3 begins <input id="zone-2" type="number" step="0.1" required /></label>

@@ -155,6 +155,8 @@ function fmtInterval(ms) {
 function updateZoneInputs() {
   zoneBounds.forEach((value, index) => { $(`zone-${index + 1}`).value = Number(displayValue(value, '°C').toFixed(1)); });
   $('zone-unit').textContent = temperatureUnit;
+  const [a, b, c] = zoneBounds.map(value => fmtValue(value, '°C'));
+  $('zone-legend').textContent = `Zone 1: below ${a} · Zone 2: ${a} to below ${b} · Zone 3: ${b} to below ${c} · Zone 4: ${c} and above`;
 }
 updateZoneInputs();
 $('zone-form').addEventListener('submit', event => {
@@ -168,6 +170,7 @@ $('zone-form').addEventListener('submit', event => {
     return;
   }
   zoneBounds = values;
+  updateZoneInputs();
   try { localStorage.setItem('temp-logger.zone-bounds', JSON.stringify(values)); } catch {}
   $('zone-error').textContent = 'Display guides saved. These are not Apple temperature limits.';
   renderCards(currentReadings);
