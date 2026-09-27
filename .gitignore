@@ -3,3 +3,7 @@ data/*.db*
 data/*.db-wal
 data/*.db-shm
 .DS_Store
+test-results/
+playwright-report/
+.env
+.env.*

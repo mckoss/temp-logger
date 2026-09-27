@@ -6,8 +6,8 @@ export default defineConfig({
   webServer: {
     command: 'node server.js --demo',
     port: 3101,
-    env: { PORT: '3101' },
-    reuseExistingServer: true,
+    env: { PORT: '3101', HOST: '127.0.0.1', DB_PATH: ':memory:', INTERVAL_MS: '100' },
+    reuseExistingServer: false,
     stdout: 'pipe',
   },
   use: {

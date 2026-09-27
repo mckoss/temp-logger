@@ -305,7 +305,7 @@ footer {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--card);
+  background: var(--panel-2);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 999px;
@@ -316,3 +316,10 @@ footer {
 .chip .swatch { width: 10px; height: 10px; border-radius: 2px; }
 .chip.off { opacity: 0.4; }
 .fine { font-size: 0.85em; color: var(--muted); }
+
+.table-scroll { overflow-x: auto; }
+.panel { min-width: 0; }
+footer { flex-wrap: wrap; }
+.ranges { flex-wrap: wrap; }
+
+table.stats td { white-space: nowrap; }
